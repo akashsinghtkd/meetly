@@ -1,0 +1,26 @@
+# dependencies
+node_modules
+dist
+dist-ssr
+
+# rust / tauri
+src-tauri/target
+src-tauri/gen/schemas
+
+# env / secrets
+.env
+.env.local
+*.local
+
+# supabase local
+supabase/.branches
+supabase/.temp
+
+# editor / os
+.DS_Store
+.vscode/*
+!.vscode/extensions.json
+*.log
+
+# local credentials doc
+CREDENTIALS.local.md

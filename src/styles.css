@@ -1,0 +1,155 @@
+@tailwind base;
+@tailwind components;
+@tailwind utilities;
+
+@layer base {
+  /* Design tokens as space-separated RGB triplets (Tailwind reads them via
+     rgb(var(--x) / <alpha-value>)). Light is the default; [data-theme="dark"]
+     on <html> swaps the palette. */
+  :root,
+  :root[data-theme="light"] {
+    color-scheme: light;
+    --ink: 55 53 47;
+    --ink-light: 120 119 116;
+    --ink-faint: 155 154 151;
+    --surface: 255 255 255;
+    --surface-sidebar: 251 251 250;
+    --surface-hover: 241 241 239;
+    --surface-active: 233 233 231;
+    --line: 233 233 231;
+    --accent: 35 131 226;
+    --accent-soft: 231 243 251;
+    --accent-hover: 26 111 194;
+    --chip: 55 53 47;
+    --chip-fg: 255 255 255;
+  }
+
+  :root[data-theme="dark"] {
+    color-scheme: dark;
+    --ink: 233 233 228;
+    --ink-light: 166 166 160;
+    --ink-faint: 124 124 116;
+    --surface: 25 26 28;
+    --surface-sidebar: 30 31 34;
+    --surface-hover: 38 40 44;
+    --surface-active: 49 52 57;
+    --line: 44 46 51;
+    --accent: 79 156 240;
+    --accent-soft: 22 40 58;
+    --accent-hover: 110 178 245;
+    --chip: 38 40 44;
+    --chip-fg: 233 233 228;
+  }
+
+  html,
+  body,
+  #root {
+    height: 100%;
+    margin: 0;
+  }
+
+  body {
+    @apply bg-surface text-ink font-sans antialiased;
+    font-size: 15px;
+    line-height: 1.5;
+  }
+
+  /* Notion-style thin scrollbars */
+  ::-webkit-scrollbar {
+    width: 10px;
+    height: 10px;
+  }
+  ::-webkit-scrollbar-thumb {
+    background: rgba(55, 53, 47, 0.16);
+    border-radius: 6px;
+    border: 3px solid transparent;
+    background-clip: content-box;
+  }
+  ::-webkit-scrollbar-thumb:hover {
+    background: rgba(55, 53, 47, 0.28);
+    background-clip: content-box;
+  }
+
+  [contenteditable] {
+    outline: none;
+  }
+  [contenteditable][data-placeholder]:empty::before {
+    content: attr(data-placeholder);
+    @apply text-ink-faint;
+    pointer-events: none;
+  }
+}
+
+@layer components {
+  .nav-item {
+    @apply flex items-center gap-2 px-2 py-1.5 rounded-md text-sm text-ink-light
+           cursor-pointer select-none transition-colors text-left;
+  }
+  .nav-item:hover {
+    @apply bg-surface-hover text-ink;
+  }
+  .nav-item.active {
+    @apply bg-surface-active text-ink font-medium;
+  }
+
+  .section-label {
+    @apply text-[11px] font-semibold uppercase tracking-wider text-ink-faint;
+  }
+
+  .block-heading {
+    @apply text-[13px] font-semibold uppercase tracking-wide text-ink-faint mb-2;
+  }
+
+  .field {
+    @apply w-full rounded-lg border border-line bg-surface px-3 py-2 text-sm text-ink
+           outline-none transition-colors placeholder:text-ink-faint
+           focus:border-accent focus:ring-2 focus:ring-accent/20;
+  }
+
+  /* subtle drag region for the frameless titlebar */
+  .titlebar-drag {
+    -webkit-app-region: drag;
+  }
+  .no-drag {
+    -webkit-app-region: no-drag;
+  }
+}
+
+/* pulsing red dot while recording */
+@keyframes recording-pulse {
+  0%,
+  100% {
+    opacity: 1;
+    transform: scale(1);
+  }
+  50% {
+    opacity: 0.55;
+    transform: scale(0.82);
+  }
+}
+.recording-dot {
+  animation: recording-pulse 1.4s ease-in-out infinite;
+}
+
+/* expanding halo behind the live record glyph */
+@keyframes recording-halo {
+  0% {
+    opacity: 0.7;
+    transform: scale(0.85);
+  }
+  70%,
+  100% {
+    opacity: 0;
+    transform: scale(1.35);
+  }
+}
+.recording-halo {
+  animation: recording-halo 1.8s ease-out infinite;
+}
+
+@media (prefers-reduced-motion: reduce) {
+  .recording-dot,
+  .recording-halo {
+    animation: none;
+  }
+}

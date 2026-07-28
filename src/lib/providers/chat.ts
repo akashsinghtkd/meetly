@@ -1,0 +1,28 @@
+// Low-level chat-completion wrapper. Delegates to the Rust `chat_completion`
+// command (no CORS, key stays native). Returns exact token usage.
+
+export interface ChatOutput {
+  content: string;
+  inputTokens?: number;
+  outputTokens?: number;
+}
+
+export async function chatCompletion(
+  model: string,
+  apiKey: string,
+  system: string,
+  user: string,
+  jsonMode: boolean,
+): Promise<ChatOutput> {
+  const { invoke } = await import("@tauri-apps/api/core");
+  const res = await invoke<{
+    content: string;
+    input_tokens: number | null;
+    output_tokens: number | null;
+  }>("chat_completion", { model, apiKey, system, user, jsonMode });
+  return {
+    content: res.content,
+    inputTokens: res.input_tokens ?? undefined,
+    outputTokens: res.output_tokens ?? undefined,
+  };
+}

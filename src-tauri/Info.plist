@@ -1,0 +1,10 @@
+<?xml version="1.0" encoding="UTF-8"?>
+<!DOCTYPE plist PUBLIC "-//Apple//DTD PLIST 1.0//EN" "http://www.apple.com/DTDs/PropertyList-1.0.dtd">
+<plist version="1.0">
+<dict>
+  <key>NSMicrophoneUsageDescription</key>
+  <string>Meetly records meeting audio to transcribe and summarize your meetings.</string>
+  <key>NSScreenCaptureUsageDescription</key>
+  <string>Meetly captures system audio from your meetings to transcribe what other participants say.</string>
+</dict>
+</plist>
