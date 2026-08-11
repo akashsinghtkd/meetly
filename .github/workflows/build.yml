@@ -1,0 +1,48 @@
+name: Build
+
+# Compile the Tauri app on the platforms it ships to, so a change that only
+# breaks one OS (e.g. the Windows-only overlay code, which can't be compiled
+# from a Mac) is caught here instead of on a user's machine. Runs on GitHub's
+# hosted runners — free for this repo.
+
+on:
+  push:
+    branches: [main]
+  pull_request:
+  workflow_dispatch:
+
+# A newer push to the same branch/PR cancels the older in-flight run.
+concurrency:
+  group: build-${{ github.ref }}
+  cancel-in-progress: true
+
+jobs:
+  build:
+    name: ${{ matrix.os }}
+    strategy:
+      fail-fast: false
+      matrix:
+        os: [windows-latest, macos-latest]
+    runs-on: ${{ matrix.os }}
+    steps:
+      - uses: actions/checkout@v4
+
+      - uses: actions/setup-node@v4
+        with:
+          node-version: 20
+          cache: npm
+
+      - uses: dtolnay/rust-toolchain@stable
+
+      - uses: swatinem/rust-cache@v2
+        with:
+          workspaces: src-tauri
+
+      - name: Install frontend dependencies
+        run: npm ci
+
+      # `tauri build` runs the frontend build (beforeBuildCommand) itself.
+      # --no-bundle compiles the binary but skips installer packaging/signing,
+      # which is all we need to verify the code builds on each OS.
+      - name: Build (compile only, no installer)
+        run: npm run tauri -- build --no-bundle
