@@ -1,4 +1,5 @@
 mod audio;
+mod calendar;
 mod chat;
 mod meeting_detect;
 mod mic_permission;
@@ -73,6 +74,9 @@ pub fn run() {
             meeting_detect::dismiss_overlay,
             mic_permission::mic_authorization,
             mic_permission::request_mic_access,
+            calendar::calendar_authorization,
+            calendar::request_calendar_access,
+            calendar::upcoming_events,
             overlay::pin_overlay,
             store_db::store_get,
             store_db::store_set,

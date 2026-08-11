@@ -6,5 +6,9 @@
   <string>Meetly records meeting audio to transcribe and summarize your meetings.</string>
   <key>NSScreenCaptureUsageDescription</key>
   <string>Meetly captures system audio from your meetings to transcribe what other participants say.</string>
+  <key>NSCalendarsUsageDescription</key>
+  <string>Meetly reads your calendar to title recordings and pre-fill who was in each meeting.</string>
+  <key>NSCalendarsFullAccessUsageDescription</key>
+  <string>Meetly reads your calendar to title recordings and pre-fill who was in each meeting.</string>
 </dict>
 </plist>
