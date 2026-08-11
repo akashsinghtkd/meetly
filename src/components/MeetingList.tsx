@@ -1,6 +1,7 @@
 import { Clock, Monitor, Plus, Users } from "lucide-react";
 import { useStore } from "../store/store";
 import { PageHeader } from "./PageHeader";
+import { UpcomingMeetings } from "./UpcomingMeetings";
 import { Button, EmptyState, MeetingIcon, RecordGlyph } from "./ui";
 import { formatDuration, relativeDate } from "../lib/format";
 import { inTauri } from "../lib/tauri";
@@ -27,6 +28,8 @@ export function MeetingList() {
             : "Record, transcribe, and summarize your calls"
         }
       />
+
+      <UpcomingMeetings />
 
       {meetings.length === 0 ? (
         <EmptyState

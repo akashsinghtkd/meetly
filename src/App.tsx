@@ -30,6 +30,7 @@ import { usePlatformAdmin } from "./store/platformAdminStore";
 import { cloudEnabled } from "./lib/supabase";
 import { inTauri } from "./lib/tauri";
 import { clearWorkspace, startSync, stopSync } from "./lib/sync";
+import { useCalendar } from "./store/calendarStore";
 
 function Toast() {
   const notice = useStore((s) => s.notice);
@@ -159,6 +160,20 @@ export default function App() {
     return () => {
       unlisteners.forEach((u) => u());
     };
+  }, []);
+
+  // Desktop: load calendar events at startup and whenever access is granted.
+  useEffect(() => {
+    if (!inTauri()) return;
+    useCalendar.getState().refresh();
+    let unlisten: (() => void) | undefined;
+    (async () => {
+      const { listen } = await import("@tauri-apps/api/event");
+      unlisten = await listen("calendar-permission-result", () => {
+        useCalendar.getState().refresh();
+      });
+    })();
+    return () => unlisten?.();
   }, []);
 
   // Broadcast recording state + start time so the overlay pill shows a live timer.
