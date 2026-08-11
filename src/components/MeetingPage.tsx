@@ -7,6 +7,7 @@ import {
   Link2,
   ListChecks,
   Loader2,
+  Mail,
   MessageSquare,
   Plus,
   Sparkles,
@@ -23,6 +24,7 @@ import { CostChip } from "./cost/CostChip";
 import { MeetingIcon } from "./ui";
 import { AudioPlayer, type AudioPlayerHandle } from "./AudioPlayer";
 import { SpeakersBar, SpeakerSelect } from "./Speakers";
+import { FollowupEmailModal } from "./FollowupEmailModal";
 import type { ActionItem, Meeting } from "../lib/types";
 
 function EditableTitle({ meeting }: { meeting: Meeting }) {
@@ -488,6 +490,7 @@ export function MeetingPage({ meetingId, onOpenChat }: { meetingId: string; onOp
     };
   }, [records, meetingId]);
   const [tab, setTab] = useState<MeetingTab>("overview");
+  const [emailOpen, setEmailOpen] = useState(false);
   const playerRef = useRef<AudioPlayerHandle>(null);
   // Updated ~2×/sec by the player; drives the transcript highlight.
   const [playhead, setPlayhead] = useState<number | undefined>(undefined);
@@ -547,6 +550,15 @@ export function MeetingPage({ meetingId, onOpenChat }: { meetingId: string; onOp
           >
             <Copy className="h-4 w-4" /> Copy
           </button>
+          {(meeting.summary || meeting.actionItems.length > 0) && (
+            <button
+              onClick={() => setEmailOpen(true)}
+              className="flex items-center gap-1.5 rounded-md border border-line px-2.5 py-1.5 text-sm text-ink-light hover:bg-surface-hover"
+              title="Draft a follow-up email from these notes"
+            >
+              <Mail className="h-4 w-4" /> Follow-up
+            </button>
+          )}
           <button
             onClick={copyLink}
             className="rounded-md p-1.5 text-ink-faint hover:bg-surface-hover hover:text-ink"
@@ -729,6 +741,8 @@ export function MeetingPage({ meetingId, onOpenChat }: { meetingId: string; onOp
           )}
         </aside>
       </div>
+
+      {emailOpen && <FollowupEmailModal meeting={meeting} onClose={() => setEmailOpen(false)} />}
     </div>
   );
 }

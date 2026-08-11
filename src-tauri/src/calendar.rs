@@ -24,6 +24,9 @@ pub struct CalEvent {
     pub end: f64,
     /// Display names (or emails) of the invitees, best-effort.
     pub attendees: Vec<String>,
+    /// Invitee email addresses, for pre-filling a follow-up email's recipients.
+    #[serde(rename = "attendeeEmails")]
+    pub attendee_emails: Vec<String>,
     pub location: Option<String>,
 }
 
@@ -127,18 +130,27 @@ fn map_event(ev: &objc2_event_kit::EKEvent) -> CalEvent {
     let location = unsafe { ev.location() }.map(|s| s.to_string());
 
     let mut attendees = Vec::new();
+    let mut attendee_emails = Vec::new();
     if let Some(list) = unsafe { ev.attendees() } {
         for i in 0..list.count() {
             let p = list.objectAtIndex(i);
             let name = unsafe { p.name() }.map(|s| s.to_string());
-            let email = unsafe { p.URL() }.absoluteString().map(|s| s.to_string());
+            // EKParticipant.URL is a `mailto:` URL; keep the bare address.
+            let email = unsafe { p.URL() }
+                .absoluteString()
+                .map(|s| s.to_string())
+                .map(|e| e.strip_prefix("mailto:").unwrap_or(&e).trim().to_string())
+                .filter(|e| e.contains('@'));
+            if let Some(em) = &email {
+                attendee_emails.push(em.clone());
+            }
             if let Some(label) = attendee_label(name, email) {
                 attendees.push(label);
             }
         }
     }
 
-    CalEvent { id, title, start, end, attendees, location }
+    CalEvent { id, title, start, end, attendees, attendee_emails, location }
 }
 
 /// Prefer a real name; fall back to the email (minus the `mailto:` scheme).

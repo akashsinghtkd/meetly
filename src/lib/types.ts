@@ -108,6 +108,8 @@ export interface Meeting {
   participants: string[];
   /** Invitees from the matched calendar event — the roster that seeds speaker naming. */
   attendees?: string[];
+  /** Invitee email addresses, for pre-filling a follow-up email. */
+  attendeeEmails?: string[];
   micPath?: string;
   systemPath?: string;
   speakers: Speaker[];

@@ -10,6 +10,7 @@ export interface CalEvent {
   start: number;
   end: number;
   attendees: string[];
+  attendeeEmails: string[];
   location: string | null;
 }
 

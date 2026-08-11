@@ -442,6 +442,7 @@ export const useStore = create<AppState>()(
         // Show the invitees right away; transcription later refines to who spoke.
         if (m.participants.length === 0) patch.participants = ev.attendees;
       }
+      if (ev.attendeeEmails.length) patch.attendeeEmails = ev.attendeeEmails;
       if (Object.keys(patch).length) get().updateMeeting(meetingId, patch);
     } catch (e) {
       console.error("[calendar] enrich failed:", e);
