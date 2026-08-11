@@ -56,9 +56,13 @@ export function MeetingOverlay() {
     }
   }, []);
 
-  /** Bring the pill up: show it, re-pin it, and put it on the active display. */
+  /** Re-pin the pill and re-center it on the active display.
+   *
+   * Making the pill *visible* is owned by the native side (overlay::show and
+   * the mic poller), which uses `orderFrontRegardless` so it can float over a
+   * full-screen call without activating Meetly. Calling `show()` from here can
+   * pull the user out of that full-screen call, so we deliberately don't. */
   const surface = useCallback(async () => {
-    await getCurrentWindow().show();
     await pinOverlay();
     await place();
   }, [place]);

@@ -83,6 +83,10 @@ pub fn run() {
             if let Err(e) = store_db::init(app.handle()) {
                 eprintln!("[meetly] could not open state database: {e}");
             }
+            // Convert the pill to a non-activating NSPanel *before* pinning it,
+            // so it can float onto another app's full-screen Space instead of
+            // being stranded on the desktop Space.
+            overlay::make_panel(app.handle());
             // Make the recorder pill float above other apps from the very first
             // time it is shown, not just above our own windows.
             overlay::pin(app.handle());
