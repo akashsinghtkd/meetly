@@ -1,7 +1,7 @@
 import { Clock, Monitor, Plus, Users } from "lucide-react";
 import { useStore } from "../store/store";
 import { PageHeader } from "./PageHeader";
-import { Button, EmptyState, RecordGlyph } from "./ui";
+import { Button, EmptyState, MeetingIcon, RecordGlyph } from "./ui";
 import { formatDuration, relativeDate } from "../lib/format";
 import { inTauri } from "../lib/tauri";
 
@@ -72,12 +72,7 @@ export function MeetingList() {
                     className="w-full text-left grid grid-cols-[minmax(0,1fr)_72px_88px] gap-3 px-4 py-3.5 hover:bg-surface-hover transition-colors group focus-visible:outline-none focus-visible:bg-accent-soft"
                   >
                     <div className="min-w-0 flex gap-3">
-                      <span
-                        className="mt-0.5 h-9 w-9 rounded-lg bg-surface-active grid place-items-center text-base shrink-0"
-                        aria-hidden
-                      >
-                        {m.emoji}
-                      </span>
+                      <MeetingIcon size="md" className="mt-0.5" />
                       <div className="min-w-0 flex-1">
                         <div className="flex items-center gap-2 min-w-0">
                           <span className="font-medium text-ink truncate group-hover:text-accent">

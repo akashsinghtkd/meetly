@@ -27,7 +27,7 @@ import { usePlatformAdmin } from "../store/platformAdminStore";
 import { formatUsd } from "../lib/money";
 import { inTauri } from "../lib/tauri";
 import { cloudEnabled } from "../lib/supabase";
-import { BrandMark, Button } from "./ui";
+import { BrandMark, Button, MeetingIcon } from "./ui";
 import { canEditRole, type Meeting, type View } from "../lib/types";
 
 function recentMeetings(meetings: Meeting[], limit = 8): Meeting[] {
@@ -280,7 +280,7 @@ export function Sidebar() {
                 )}
                 onClick={() => openMeeting(m.id)}
               >
-                <span className="text-[15px] leading-none shrink-0">{m.emoji}</span>
+                <MeetingIcon />
                 <span className="truncate">{m.title || "Untitled"}</span>
                 {m.status === "recording" && (
                   <Circle className="ml-auto h-2.5 w-2.5 fill-red-500 text-red-500 recording-dot shrink-0" />

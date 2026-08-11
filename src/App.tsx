@@ -29,7 +29,6 @@ import { useBilling } from "./store/billingStore";
 import { usePlatformAdmin } from "./store/platformAdminStore";
 import { cloudEnabled } from "./lib/supabase";
 import { inTauri } from "./lib/tauri";
-import { startMeetingDetection, stopMeetingDetection } from "./lib/meetingDetect";
 import { clearWorkspace, startSync, stopSync } from "./lib/sync";
 
 function Toast() {
@@ -51,12 +50,41 @@ function Toast() {
   );
 }
 
+function Splash({ label }: { label: string }) {
+  return (
+    <div className="h-screen w-screen grid place-items-center bg-surface-sidebar text-ink-faint">
+      <div className="flex flex-col items-center gap-3">
+        <Loader2 className="h-5 w-5 animate-spin text-accent" />
+        <span className="text-sm">{label}</span>
+      </div>
+    </div>
+  );
+}
+
+/**
+ * Persisted state now comes from SQLite, which is async — so on the first
+ * render the store still holds its initial (seed / empty) value. Without this
+ * gate the user sees demo meetings flash before their real ones arrive.
+ */
+function usePersistHydrated(): boolean {
+  const [hydrated, setHydrated] = useState(() => useStore.persist.hasHydrated());
+  useEffect(() => {
+    const unsub = useStore.persist.onFinishHydration(() => setHydrated(true));
+    // Hydration may have finished between the first render and this effect.
+    if (useStore.persist.hasHydrated()) setHydrated(true);
+    return unsub;
+  }, []);
+  return hydrated;
+}
+
 export default function App() {
   const view = useStore((s) => s.view);
+  const storeHydrated = usePersistHydrated();
   const meetings = useStore((s) => s.meetings);
   const openMeeting = useStore((s) => s.openMeeting);
   const recordingActive = useStore((s) => s.recording.active);
   const recordingStartedAt = useStore((s) => s.recording.startedAt);
+  const recordingSystemActive = useStore((s) => s.recording.systemActive);
   const [chatOpen, setChatOpen] = useState(false);
   const [inviteToken, setInviteToken] = useState<string | null>(() =>
     cloudEnabled() ? readInviteToken() : null,
@@ -113,7 +141,7 @@ export default function App() {
       const { listen } = await import("@tauri-apps/api/event");
       unlisteners.push(
         await listen("overlay:start-recording", () =>
-          useStore.getState().startMeeting(undefined, { micOnly: true }),
+          useStore.getState().startMeeting(),
         ),
       );
       unlisteners.push(
@@ -125,11 +153,11 @@ export default function App() {
           await getCurrentWindow().setFocus();
         }),
       );
-      startMeetingDetection();
+      // Detection itself is started natively in setup() — see
+      // src-tauri/src/lib.rs. Here we only relay the pill's actions.
     })();
     return () => {
       unlisteners.forEach((u) => u());
-      stopMeetingDetection();
     };
   }, []);
 
@@ -141,9 +169,10 @@ export default function App() {
       await emit("recording:changed", {
         active: recordingActive,
         startedAt: recordingStartedAt,
+        systemActive: recordingSystemActive,
       });
     })();
-  }, [recordingActive, recordingStartedAt]);
+  }, [recordingActive, recordingStartedAt, recordingSystemActive]);
 
   // Load teamspaces whenever auth user changes (by id, not object identity).
   useEffect(() => {
@@ -171,16 +200,9 @@ export default function App() {
     return () => stopSync();
   }, [userId, activeId, loadBilling]);
 
-  if (cloudEnabled() && !ready) {
-    return (
-      <div className="h-screen w-screen grid place-items-center bg-surface-sidebar text-ink-faint">
-        <div className="flex flex-col items-center gap-3">
-          <Loader2 className="h-5 w-5 animate-spin text-accent" />
-          <span className="text-sm">Loading Meetly…</span>
-        </div>
-      </div>
-    );
-  }
+  if (!storeHydrated) return <Splash label="Loading Meetly…" />;
+
+  if (cloudEnabled() && !ready) return <Splash label="Loading Meetly…" />;
 
   if (cloudEnabled() && !user) return <SignIn />;
 
@@ -198,16 +220,7 @@ export default function App() {
     );
   }
 
-  if (cloudEnabled() && user && !tsReady) {
-    return (
-      <div className="h-screen w-screen grid place-items-center bg-surface-sidebar text-ink-faint">
-        <div className="flex flex-col items-center gap-3">
-          <Loader2 className="h-5 w-5 animate-spin text-accent" />
-          <span className="text-sm">Loading teamspaces…</span>
-        </div>
-      </div>
-    );
-  }
+  if (cloudEnabled() && user && !tsReady) return <Splash label="Loading teamspaces…" />;
 
   if (cloudEnabled() && user && tsReady && teamspaces.length === 0) {
     return <CreateTeamspace />;

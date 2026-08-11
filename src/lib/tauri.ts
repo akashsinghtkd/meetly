@@ -43,6 +43,22 @@ export async function stopRecording(): Promise<RecordingResult> {
   return invoke<RecordingResult>("stop_recording");
 }
 
+/**
+ * The system-audio source to use when the user hasn't chosen one. Resolved
+ * natively so the platform logic lives in one place: a Core Audio process tap
+ * on macOS, WASAPI loopback on the default output on Windows. Without this a
+ * recording captured only your own voice unless you'd configured a device by
+ * hand.
+ */
+export async function defaultSystemDevice(): Promise<string | null> {
+  if (!inTauri()) return null; // browsers cannot capture other apps' audio
+  try {
+    return await invoke<string | null>("default_system_device");
+  } catch {
+    return null;
+  }
+}
+
 export async function isRecording(): Promise<boolean> {
   if (!inTauri()) return false;
   return invoke<boolean>("is_recording");

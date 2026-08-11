@@ -5,6 +5,7 @@ import { useStore } from "../store/store";
 import { relativeDate, formatDuration } from "../lib/format";
 import { TASK_COLUMNS } from "../lib/types";
 import { TasksBoard } from "./TasksBoard";
+import { MeetingIcon } from "./ui";
 import type { Meeting } from "../lib/types";
 
 const EMOJI_CHOICES = ["📁", "🚀", "🛠️", "📊", "🎯", "💡", "🧩", "📦", "🌐", "🔬", "✏️", "🏁", "🎨", "📣", "🧪", "⚙️"];
@@ -288,7 +289,7 @@ function MeetingRow({ meeting, onClick }: { meeting: Meeting; onClick: () => voi
       onClick={onClick}
       className="w-full flex items-center gap-3 rounded-xl border border-line p-3 hover:bg-surface-hover text-left transition-colors"
     >
-      <div className="h-9 w-9 rounded-lg bg-surface-active grid place-items-center text-lg shrink-0">{meeting.emoji}</div>
+      <MeetingIcon size="md" />
       <div className="min-w-0 flex-1">
         <div className="font-medium text-ink truncate">{meeting.title}</div>
         <div className="text-xs text-ink-faint">
@@ -376,7 +377,7 @@ function AddExisting({
                 }}
                 className="w-full flex items-center gap-2 px-3 py-2 text-sm text-left hover:bg-surface-hover"
               >
-                <span>{m.emoji}</span>
+                <MeetingIcon />
                 <span className="truncate">{m.title}</span>
               </button>
             ))}

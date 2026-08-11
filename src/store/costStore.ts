@@ -1,5 +1,6 @@
 import { create } from "zustand";
-import { persist } from "zustand/middleware";
+import { createJSONStorage, persist } from "zustand/middleware";
+import { persistStorage } from "../lib/persistStorage";
 import type { Capability } from "../lib/providers/catalog";
 
 // Every billable API call produces a UsageRecord. This store is the ledger the
@@ -90,6 +91,6 @@ export const useCost = create<CostState>()(
         return [...map.values()].sort((a, b) => b.costUsd - a.costUsd);
       },
     }),
-    { name: "meetly-cost-ledger" },
+    { name: "meetly-cost-ledger", storage: createJSONStorage(() => persistStorage) },
   ),
 );

@@ -1,5 +1,6 @@
 import clsx from "clsx";
 import { useStore } from "../store/store";
+import { MeetingIcon } from "./ui";
 
 export function ActionItemsView() {
   const meetings = useStore((s) => s.meetings);
@@ -73,7 +74,7 @@ function Group({
               onClick={() => openMeeting(meeting.id)}
               className="text-xs text-ink-faint hover:text-accent flex items-center gap-1"
             >
-              <span>{meeting.emoji}</span>
+              <MeetingIcon className="h-3.5 w-3.5" />
               <span className="max-w-[140px] truncate">{meeting.title}</span>
             </button>
           </div>

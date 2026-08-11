@@ -1,11 +1,11 @@
 import { useMemo, useState } from "react";
 import { Search } from "lucide-react";
+import { MeetingIcon } from "./ui";
 import { useStore } from "../store/store";
 import { relativeDate } from "../lib/format";
 
 interface Hit {
   meetingId: string;
-  emoji: string;
   title: string;
   snippet: string;
   where: string;
@@ -22,19 +22,19 @@ export function SearchView() {
     const out: Hit[] = [];
     for (const m of meetings) {
       if (m.title.toLowerCase().includes(term)) {
-        out.push({ meetingId: m.id, emoji: m.emoji, title: m.title, snippet: relativeDate(m.startedAt), where: "Title" });
+        out.push({ meetingId: m.id, title: m.title, snippet: relativeDate(m.startedAt), where: "Title" });
       }
       if (m.summary?.executive.toLowerCase().includes(term)) {
-        out.push({ meetingId: m.id, emoji: m.emoji, title: m.title, snippet: m.summary.executive, where: "Summary" });
+        out.push({ meetingId: m.id, title: m.title, snippet: m.summary.executive, where: "Summary" });
       }
       for (const seg of m.transcript) {
         if (seg.text.toLowerCase().includes(term)) {
-          out.push({ meetingId: m.id, emoji: m.emoji, title: m.title, snippet: seg.text, where: "Transcript" });
+          out.push({ meetingId: m.id, title: m.title, snippet: seg.text, where: "Transcript" });
         }
       }
       for (const a of m.actionItems) {
         if (a.task.toLowerCase().includes(term)) {
-          out.push({ meetingId: m.id, emoji: m.emoji, title: m.title, snippet: a.task, where: "Action item" });
+          out.push({ meetingId: m.id, title: m.title, snippet: a.task, where: "Action item" });
         }
       }
     }
@@ -66,7 +66,7 @@ export function SearchView() {
             onClick={() => openMeeting(h.meetingId)}
             className="w-full text-left flex items-start gap-3 rounded-md px-3 py-2.5 hover:bg-surface-hover"
           >
-            <span className="text-lg leading-none">{h.emoji}</span>
+            <MeetingIcon className="mt-0.5" />
             <div className="min-w-0">
               <div className="flex items-center gap-2">
                 <span className="font-medium text-ink text-sm">{h.title}</span>

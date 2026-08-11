@@ -146,7 +146,7 @@ function TaskCard({ task, showProject }: { task: Task; showProject?: boolean }) 
             className="ml-auto flex items-center gap-1 text-[10px] text-ink-faint hover:text-accent"
             title="From this meeting"
           >
-            <Mic className="h-3 w-3" /> {meeting.emoji}
+            <Mic className="h-3 w-3" />
           </button>
         )}
       </div>

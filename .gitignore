@@ -24,3 +24,7 @@ supabase/.temp
 
 # local credentials doc
 CREDENTIALS.local.md
+
+# local dev artifacts
+.playwright-mcp/
+after.png

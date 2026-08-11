@@ -124,6 +124,42 @@ export function RecordGlyph({
   );
 }
 
+/**
+ * The mark for a meeting in lists.
+ *
+ * Every meeting carries the same hard-coded 🎙️ emoji, so it never identified
+ * anything — and it rendered as a full-colour Apple glyph beside monochrome
+ * lucide icons, drawing more attention than the title it labelled. This is the
+ * same idea in the app's own language: muted, and optically the same size as
+ * the rest of the nav.
+ *
+ * Distinct from [`RecordGlyph`], which is the saturated accent disc for the
+ * *act* of recording — far too loud to repeat down a list.
+ */
+export function MeetingIcon({
+  size = "sm",
+  className,
+}: {
+  size?: "sm" | "md" | "lg";
+  className?: string;
+}) {
+  // Bare in dense rows (sidebar, search) so it matches the neighbouring nav
+  // icons; contained where it anchors a taller row or a page header.
+  if (size === "sm") {
+    return <Mic className={clsx("h-4 w-4 shrink-0 text-ink-faint", className)} aria-hidden />;
+  }
+  const tile = size === "lg" ? "h-12 w-12 rounded-xl" : "h-9 w-9 rounded-lg";
+  const icon = size === "lg" ? "h-6 w-6" : "h-4 w-4";
+  return (
+    <span
+      className={clsx("grid place-items-center bg-surface-active shrink-0", tile, className)}
+      aria-hidden
+    >
+      <Mic className={clsx(icon, "text-ink-light")} />
+    </span>
+  );
+}
+
 export function BrandMark({ size = "md" }: { size?: "sm" | "md" | "lg" }) {
   const box =
     size === "sm" ? "h-6 w-6 text-[11px]" : size === "lg" ? "h-10 w-10 text-base" : "h-7 w-7 text-xs";

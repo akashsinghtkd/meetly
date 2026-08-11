@@ -178,7 +178,7 @@ export function clearWorkspace() {
     projects: [],
     tasks: [],
     view: { kind: "all-meetings" },
-    recording: { active: false, meetingId: null, startedAt: null, elapsedSecs: 0 },
+    recording: { active: false, meetingId: null, startedAt: null, elapsedSecs: 0, systemActive: false },
   });
   useCost.setState({ records: [] });
 }

@@ -17,11 +17,15 @@ crate-type = ["staticlib", "cdylib", "rlib"]
 tauri-build = { version = "2", features = [] }
 
 [dependencies]
-tauri = { version = "2", features = ["macos-private-api"] }
+tauri = { version = "2", features = ["protocol-asset", "macos-private-api"] }
 tauri-plugin-opener = "2"
 tauri-plugin-dialog = "2"
 serde = { version = "1", features = ["derive"] }
 serde_json = "1"
+
+# Durable app state. `bundled` compiles SQLite in, so there's no dependency on
+# whatever version the host OS ships.
+rusqlite = { version = "0.32", features = ["bundled"] }
 
 # Audio capture
 cpal = "0.15"
@@ -31,9 +35,14 @@ chrono = { version = "0.4", features = ["serde"] }
 # HTTP (transcription API calls happen in Rust to avoid CORS + keep keys native)
 reqwest = { version = "0.12", default-features = false, features = ["multipart", "json", "rustls-tls"] }
 
-# Raw AppKit access for the floating overlay (window level + collection behavior).
+# Reads the CapabilityAccessManager consent store to detect mic use.
+[target.'cfg(windows)'.dependencies]
+winreg = "0.52"
+
+# Raw AppKit/AVFoundation access: overlay window level + mic authorization.
 [target.'cfg(target_os = "macos")'.dependencies]
 objc2 = "0.6"
+block2 = "0.6"
 
 [features]
 # This feature is used for production builds or when a dev server is not specified,

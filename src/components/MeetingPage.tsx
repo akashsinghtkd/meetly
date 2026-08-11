@@ -1,4 +1,4 @@
-import { useMemo, useState } from "react";
+import { useLayoutEffect, useMemo, useRef, useState } from "react";
 import {
   AlertTriangle,
   CheckSquare,
@@ -20,6 +20,8 @@ import { useCost } from "../store/costStore";
 import { formatClock, formatDuration, relativeDate } from "../lib/format";
 import { copyToClipboard, meetingShareLink, meetingToMarkdown } from "../lib/exportMeeting";
 import { CostChip } from "./cost/CostChip";
+import { MeetingIcon } from "./ui";
+import { AudioPlayer, type AudioPlayerHandle } from "./AudioPlayer";
 import { SpeakersBar, SpeakerSelect } from "./Speakers";
 import type { Meeting } from "../lib/types";
 
@@ -117,43 +119,116 @@ function BulletList({ items, empty }: { items: string[]; empty: string }) {
   );
 }
 
+/** Values the summariser emits when it couldn't find a real owner. */
+const UNSET_OWNERS = new Set(["unspecified", "unknown", "none", "n/a", "na", "tbd", "-"]);
+
+function ownerOrBlank(owner: string): string {
+  return UNSET_OWNERS.has(owner.trim().toLowerCase()) ? "" : owner;
+}
+
+/**
+ * A textarea that grows with its content. Action items live in a narrow
+ * sidebar, so a single-line input clipped most tasks mid-word — the whole
+ * point of the list is being able to read them.
+ */
+function TaskField({
+  value,
+  done,
+  onChange,
+}: {
+  value: string;
+  done: boolean;
+  onChange: (next: string) => void;
+}) {
+  const ref = useRef<HTMLTextAreaElement>(null);
+
+  useLayoutEffect(() => {
+    const el = ref.current;
+    if (!el) return;
+    el.style.height = "auto";
+    el.style.height = `${el.scrollHeight}px`;
+  }, [value]);
+
+  return (
+    <textarea
+      ref={ref}
+      rows={1}
+      value={value}
+      placeholder="Describe the task…"
+      onChange={(e) => onChange(e.target.value)}
+      // A task is one line of intent, not a paragraph — commit on Enter
+      // instead of growing the field.
+      onKeyDown={(e) => {
+        if (e.key === "Enter") {
+          e.preventDefault();
+          e.currentTarget.blur();
+        }
+      }}
+      className={clsx(
+        "block w-full resize-none overflow-hidden bg-transparent outline-none",
+        "text-sm leading-snug placeholder:text-ink-faint",
+        done && "line-through text-ink-faint",
+      )}
+    />
+  );
+}
+
 function ActionItems({ meeting }: { meeting: Meeting }) {
   const toggle = useStore((s) => s.toggleActionItem);
   const add = useStore((s) => s.addActionItem);
   const update = useStore((s) => s.updateActionItem);
 
   return (
-    <div className="space-y-1">
-      {meeting.actionItems.map((a) => (
-        <div key={a.id} className="group flex items-center gap-2.5 py-1 rounded hover:bg-surface-hover px-1 -mx-1">
-          <input
-            type="checkbox"
-            checked={a.status === "done"}
-            onChange={() => toggle(meeting.id, a.id)}
-            className="h-4 w-4 rounded border-ink-faint accent-accent cursor-pointer"
-          />
-          <input
-            value={a.task}
-            placeholder="Describe the task…"
-            onChange={(e) => update(meeting.id, a.id, { task: e.target.value })}
-            className={clsx(
-              "flex-1 bg-transparent outline-none text-sm",
-              a.status === "done" && "line-through text-ink-faint",
-            )}
-          />
-          <input
-            value={a.owner}
-            placeholder="owner"
-            onChange={(e) => update(meeting.id, a.id, { owner: e.target.value })}
-            className="w-24 bg-surface-active/60 rounded px-2 py-0.5 text-xs text-ink-light outline-none"
-          />
-          {a.due && (
-            <span className="text-xs text-ink-faint bg-surface-active rounded px-1.5 py-0.5">
-              {a.due}
-            </span>
-          )}
-        </div>
-      ))}
+    <div className="space-y-1.5">
+      {meeting.actionItems.map((a) => {
+        const done = a.status === "done";
+        const owner = ownerOrBlank(a.owner);
+        return (
+          <div key={a.id} className="group -mx-1 rounded px-1 py-1.5 hover:bg-surface-hover">
+            <div className="flex items-start gap-2.5">
+              <input
+                type="checkbox"
+                checked={done}
+                onChange={() => toggle(meeting.id, a.id)}
+                className="mt-0.5 h-4 w-4 shrink-0 rounded border-ink-faint accent-accent cursor-pointer"
+              />
+              {/* min-w-0 is load-bearing: without it the intrinsic width of the
+                  fields becomes the row's floor and the metadata overflows the
+                  card. */}
+              <div className="min-w-0 flex-1">
+                <TaskField
+                  value={a.task}
+                  done={done}
+                  onChange={(task) => update(meeting.id, a.id, { task })}
+                />
+                <div className="mt-1 flex flex-wrap items-center gap-1.5">
+                  <input
+                    value={owner}
+                    placeholder="Assign"
+                    // Hug the content like the due chip does, instead of a
+                    // fixed box that reads as an empty field. -ml-1.5 cancels
+                    // the padding so the text lines up under the task above.
+                    size={Math.max(owner.length, 6)}
+                    onChange={(e) => update(meeting.id, a.id, { owner: e.target.value })}
+                    className={clsx(
+                      "-ml-1.5 max-w-full rounded px-1.5 py-0.5 text-xs outline-none transition-colors",
+                      "placeholder:text-ink-faint",
+                      owner
+                        ? "bg-surface-active/60 text-ink-light"
+                        : "text-ink-light hover:bg-surface-active/50 focus:bg-surface-active/50",
+                    )}
+                  />
+                  {a.due && (
+                    <span className="shrink-0 whitespace-nowrap rounded bg-surface-active px-1.5 py-0.5 text-xs text-ink-faint">
+                      {a.due}
+                    </span>
+                  )}
+                </div>
+              </div>
+            </div>
+          </div>
+        );
+      })}
       <button
         onClick={() => add(meeting.id)}
         className="flex items-center gap-1.5 text-sm text-ink-faint hover:text-ink-light mt-1 px-1"
@@ -164,7 +239,16 @@ function ActionItems({ meeting }: { meeting: Meeting }) {
   );
 }
 
-function Transcript({ meeting }: { meeting: Meeting }) {
+function Transcript({
+  meeting,
+  playhead,
+  onSeek,
+}: {
+  meeting: Meeting;
+  /** Current playback position, so the line being spoken can be marked. */
+  playhead?: number;
+  onSeek?: (seconds: number) => void;
+}) {
   if (!meeting.transcript.length) {
     return (
       <p className="text-ink-faint text-sm">
@@ -174,17 +258,38 @@ function Transcript({ meeting }: { meeting: Meeting }) {
   }
   return (
     <div className="space-y-3">
-      {meeting.transcript.map((seg) => (
-        <div key={seg.id} className="flex gap-3">
-          <span className="text-[11px] text-ink-faint tabular-nums pt-1 w-10 shrink-0">
-            {formatClock(Math.floor(seg.tStart))}
-          </span>
-          <div>
-            <SpeakerSelect meeting={meeting} segment={seg} />
-            <span className="text-ink">{seg.text}</span>
+      {meeting.transcript.map((seg) => {
+        const active =
+          playhead !== undefined && playhead >= seg.tStart && playhead < seg.tEnd;
+        return (
+          <div
+            key={seg.id}
+            className={clsx(
+              "flex gap-3 -mx-2 px-2 py-1 rounded-md transition-colors",
+              active && "bg-accent-soft",
+            )}
+          >
+            {/* The timestamp doubles as "play from here" — the fastest way to
+                check a line you don't trust against the actual audio. */}
+            <button
+              type="button"
+              onClick={() => onSeek?.(seg.tStart)}
+              disabled={!onSeek}
+              title={onSeek ? "Play from here" : undefined}
+              className={clsx(
+                "text-[11px] tabular-nums pt-1 w-10 shrink-0 text-left transition-colors",
+                onSeek ? "text-ink-faint hover:text-accent cursor-pointer" : "text-ink-faint",
+              )}
+            >
+              {formatClock(Math.floor(seg.tStart))}
+            </button>
+            <div>
+              <SpeakerSelect meeting={meeting} segment={seg} />
+              <span className="text-ink">{seg.text}</span>
+            </div>
           </div>
-        </div>
-      ))}
+        );
+      })}
     </div>
   );
 }
@@ -217,6 +322,9 @@ export function MeetingPage({ meetingId, onOpenChat }: { meetingId: string; onOp
     };
   }, [records, meetingId]);
   const [tab, setTab] = useState<MeetingTab>("summary");
+  const playerRef = useRef<AudioPlayerHandle>(null);
+  // Updated ~2×/sec by the player; drives the transcript highlight.
+  const [playhead, setPlayhead] = useState<number | undefined>(undefined);
   if (!meeting) return null;
 
   const isLive = meeting.status === "recording";
@@ -241,7 +349,7 @@ export function MeetingPage({ meetingId, onOpenChat }: { meetingId: string; onOp
 
   return (
     <div className="max-w-5xl mx-auto px-8 sm:px-12 py-12 pb-32">
-      <div className="text-6xl mb-3">{meeting.emoji}</div>
+      <MeetingIcon size="lg" className="mb-3" />
 
       <div className="flex items-start justify-between gap-4">
         <EditableTitle meeting={meeting} />
@@ -394,7 +502,11 @@ export function MeetingPage({ meetingId, onOpenChat }: { meetingId: string; onOp
                 title="Transcript"
                 count={meeting.transcript.length}
               >
-                <Transcript meeting={meeting} />
+                <Transcript
+                  meeting={meeting}
+                  playhead={playhead}
+                  onSeek={meeting.micPath ? (t) => playerRef.current?.seekTo(t) : undefined}
+                />
               </Block>
             </>
           )}
@@ -402,6 +514,9 @@ export function MeetingPage({ meetingId, onOpenChat }: { meetingId: string; onOp
 
         {/* Sticky sidebar: the at-a-glance essentials */}
         <aside className="lg:sticky lg:top-12 h-max space-y-4">
+          {/* Sticky, so the transport stays put while the transcript scrolls. */}
+          <AudioPlayer ref={playerRef} meeting={meeting} onTime={setPlayhead} />
+
           <div className="rounded-xl border border-line bg-surface-sidebar/50 p-4 space-y-2 text-sm">
             <MetaRow label="Date" value={relativeDate(meeting.startedAt)} />
             <MetaRow

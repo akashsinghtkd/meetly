@@ -1,9 +1,10 @@
 import { create } from "zustand";
-import { persist } from "zustand/middleware";
+import { createJSONStorage, persist } from "zustand/middleware";
 import type { ActionItem, Meeting, Project, Task, TaskStatus, TranscriptSegment, View } from "../lib/types";
 import { seedMeetings, seedProjects, seedTasks, SPEAKER_COLORS, PROJECT_COLORS } from "../lib/seed";
 import { cloudEnabled } from "../lib/supabase";
-import { startRecording, stopRecording } from "../lib/tauri";
+import { persistStorage } from "../lib/persistStorage";
+import { defaultSystemDevice, startRecording, stopRecording } from "../lib/tauri";
 import { startLiveSession, stopLiveSession } from "../lib/liveTranscription";
 import { getSummarizer } from "../lib/providers/summarize";
 import { enhanceNotes } from "../lib/providers/notes";
@@ -34,6 +35,8 @@ interface RecordingState {
   meetingId: string | null;
   startedAt: number | null;
   elapsedSecs: number;
+  /** True when the call's other side is being captured too, not just the mic. */
+  systemActive: boolean;
 }
 
 interface AppState {
@@ -128,7 +131,7 @@ export const useStore = create<AppState>()(
   projects: cloudEnabled() ? [] : seedProjects,
   tasks: cloudEnabled() ? [] : seedTasks,
   view: { kind: "all-meetings" },
-  recording: { active: false, meetingId: null, startedAt: null, elapsedSecs: 0 },
+  recording: { active: false, meetingId: null, startedAt: null, elapsedSecs: 0, systemActive: false },
   micDevice: null,
   systemDevice: null,
   notice: null,
@@ -397,12 +400,17 @@ export const useStore = create<AppState>()(
     set((s) => ({
       meetings: [meeting, ...s.meetings],
       view: { kind: "meeting", id: meeting.id },
-      recording: { active: true, meetingId: meeting.id, startedAt: Date.now(), elapsedSecs: 0 },
+      recording: { active: true, meetingId: meeting.id, startedAt: Date.now(), elapsedSecs: 0, systemActive: false },
     }));
     try {
       // Overlay "mic only" captures just the microphone (no system audio channel).
-      const systemDevice = opts?.micOnly ? null : get().systemDevice;
+      // Otherwise fall back to the built-in system tap, so "record the meeting"
+      // means everyone on the call and not just this side of it.
+      const systemDevice = opts?.micOnly
+        ? null
+        : get().systemDevice ?? (await defaultSystemDevice());
       await startRecording(meeting.id, get().micDevice, systemDevice);
+      set((s) => ({ recording: { ...s.recording, systemActive: Boolean(systemDevice) } }));
     } catch (e) {
       console.error("startRecording failed:", e);
     }
@@ -424,7 +432,7 @@ export const useStore = create<AppState>()(
     // emitted during stop are still captured, then tear it down and generate notes.
     setTimeout(() => stopLiveSession(), 1500);
     set((s) => ({
-      recording: { active: false, meetingId: null, startedAt: null, elapsedSecs: 0 },
+      recording: { active: false, meetingId: null, startedAt: null, elapsedSecs: 0, systemActive: false },
       meetings: s.meetings.map((m) =>
         m.id !== id
           ? m
@@ -667,6 +675,8 @@ export const useStore = create<AppState>()(
     }),
     {
       name: "meetly-meetings",
+      // SQLite under Tauri — transcripts outgrow localStorage. See persistStorage.
+      storage: createJSONStorage(() => persistStorage),
       // Persist only durable data; view/recording are transient.
       partialize: (s) => ({
         meetings: s.meetings,

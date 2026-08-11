@@ -30,11 +30,11 @@ type WavWriter = hound::WavWriter<BufWriter<File>>;
 
 /// Both writers for one capture source. The audio callback writes every sample
 /// to both; only `chunk` is rotated.
-struct Sink {
-    chunk: Option<WavWriter>,
-    full: Option<WavWriter>,
+pub struct Sink {
+    pub chunk: Option<WavWriter>,
+    pub full: Option<WavWriter>,
 }
-type SharedSink = Arc<Mutex<Sink>>;
+pub type SharedSink = Arc<Mutex<Sink>>;
 
 #[derive(Debug, Clone, Serialize)]
 pub struct AudioDevice {
@@ -111,6 +111,20 @@ pub fn list_devices() -> Result<Vec<AudioDevice>, String> {
         });
     }
 
+    // macOS 14.2+ can tap the system mix directly — no BlackHole required.
+    #[cfg(target_os = "macos")]
+    if crate::system_audio::is_supported() {
+        out.insert(
+            0,
+            AudioDevice {
+                name: crate::system_audio::DEVICE_LABEL.to_string(),
+                is_default: false,
+                likely_system_audio: true,
+                is_loopback: true,
+            },
+        );
+    }
+
     // On Windows, output devices can be captured in loopback mode — this gives
     // zero-install system-audio capture (no virtual device needed).
     #[cfg(target_os = "windows")]
@@ -130,6 +144,33 @@ pub fn list_devices() -> Result<Vec<AudioDevice>, String> {
     }
 
     Ok(out)
+}
+
+/// The system-audio source to use when the user hasn't picked one.
+///
+/// Both desktop platforms can capture the far side of a call with nothing to
+/// install — macOS through a Core Audio process tap, Windows through WASAPI
+/// loopback on the default output (cpal sets `AUDCLNT_STREAMFLAGS_LOOPBACK`
+/// automatically when you open an input stream on a render device). Neither was
+/// being used by default, so recordings captured only this side of the call.
+pub fn default_system_device() -> Option<String> {
+    #[cfg(target_os = "macos")]
+    {
+        if crate::system_audio::is_supported() {
+            return Some(crate::system_audio::DEVICE_LABEL.to_string());
+        }
+    }
+
+    #[cfg(target_os = "windows")]
+    {
+        if let Some(device) = cpal::default_host().default_output_device() {
+            if let Ok(name) = device.name() {
+                return Some(format!("{name}{LOOPBACK_SUFFIX}"));
+            }
+        }
+    }
+
+    None
 }
 
 /// Resolve the device + config to capture. A name ending in `LOOPBACK_SUFFIX`
@@ -174,6 +215,24 @@ fn new_wav(path: &PathBuf, spec: hound::WavSpec) -> Result<WavWriter, String> {
     hound::WavWriter::create(path, spec).map_err(|e| e.to_string())
 }
 
+/// Where a track's audio comes from. Resolved before the capture thread starts
+/// so failures surface to the UI immediately instead of dying in a thread.
+enum Capture {
+    Cpal(cpal::Device, cpal::StreamConfig, SampleFormat),
+    /// macOS process tap — system audio with nothing to install.
+    #[cfg(target_os = "macos")]
+    SystemTap(crate::system_audio::SystemAudioTap),
+}
+
+/// Kept alive for the lifetime of the capture thread; dropping stops capture.
+/// The variants are never read — holding them *is* the point.
+#[allow(dead_code)]
+enum LiveCapture {
+    Cpal(cpal::Stream),
+    #[cfg(target_os = "macos")]
+    SystemTap(crate::system_audio::SystemAudioTap),
+}
+
 fn start_track(
     app: AppHandle,
     meeting_id: String,
@@ -184,15 +243,43 @@ fn start_track(
     let stop = Arc::new(AtomicBool::new(false));
     let stop_thread = stop.clone();
 
-    let (device, supported) = resolve_capture(device_name.clone())?;
-    let sample_format = supported.sample_format();
-    let config: cpal::StreamConfig = supported.into();
-    let spec = hound::WavSpec {
-        channels: config.channels,
-        sample_rate: config.sample_rate.0,
-        bits_per_sample: 16,
-        sample_format: hound::SampleFormat::Int,
+    #[cfg(target_os = "macos")]
+    let use_tap = device_name.as_deref() == Some(crate::system_audio::DEVICE_LABEL);
+    #[cfg(not(target_os = "macos"))]
+    let use_tap = false;
+
+    let (capture, spec) = if use_tap {
+        #[cfg(target_os = "macos")]
+        {
+            let tap = crate::system_audio::SystemAudioTap::open()?;
+            let fmt = tap.format()?;
+            (
+                Capture::SystemTap(tap),
+                hound::WavSpec {
+                    channels: fmt.channels,
+                    sample_rate: fmt.sample_rate,
+                    bits_per_sample: 16,
+                    sample_format: hound::SampleFormat::Int,
+                },
+            )
+        }
+        #[cfg(not(target_os = "macos"))]
+        unreachable!()
+    } else {
+        let (device, supported) = resolve_capture(device_name.clone())?;
+        let sample_format = supported.sample_format();
+        let config: cpal::StreamConfig = supported.into();
+        let spec = hound::WavSpec {
+            channels: config.channels,
+            sample_rate: config.sample_rate.0,
+            bits_per_sample: 16,
+            sample_format: hound::SampleFormat::Int,
+        };
+        (Capture::Cpal(device, config, sample_format), spec)
     };
+
+    let got_audio = Arc::new(AtomicBool::new(false));
+    let got_audio_thread = got_audio.clone();
 
     let full_path = dir.join(format!("{meeting_id}-{channel}-full.wav"));
     // Validate we can create the full-session file up front (fail fast to UI).
@@ -214,17 +301,31 @@ fn start_track(
             full: Some(full_writer),
         }));
 
-        let stream = match build_stream(&device, &config, sample_format, sink.clone()) {
-            Ok(s) => s,
-            Err(e) => {
-                eprintln!("[audio] build stream failed: {e}");
-                return;
+        // Bound to a local so capture stays alive until this thread ends.
+        let _live = match capture {
+            Capture::Cpal(device, config, sample_format) => {
+                let stream = match build_stream(&device, &config, sample_format, sink.clone()) {
+                    Ok(s) => s,
+                    Err(e) => {
+                        eprintln!("[audio] build stream failed: {e}");
+                        return;
+                    }
+                };
+                if let Err(e) = stream.play() {
+                    eprintln!("[audio] stream play failed: {e}");
+                    return;
+                }
+                LiveCapture::Cpal(stream)
+            }
+            #[cfg(target_os = "macos")]
+            Capture::SystemTap(mut tap) => {
+                if let Err(e) = tap.start(sink.clone(), got_audio_thread.clone()) {
+                    eprintln!("[audio] system tap failed: {e}");
+                    return;
+                }
+                LiveCapture::SystemTap(tap)
             }
         };
-        if let Err(e) = stream.play() {
-            eprintln!("[audio] stream play failed: {e}");
-            return;
-        }
 
         let mut chunk_start = Instant::now();
         let emit = |index: usize, path: &PathBuf, elapsed: f64| {
@@ -258,6 +359,9 @@ fn start_track(
                 if let Some(o) = old {
                     let _ = o.finalize();
                     emit(index, &chunk_path, elapsed);
+                }
+                if !got_audio_thread.load(Ordering::Relaxed) && channel == "system" {
+                    eprintln!("[audio] the system-audio track received no samples");
                 }
                 break;
             }
