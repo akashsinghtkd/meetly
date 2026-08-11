@@ -559,6 +559,10 @@ export const useStore = create<AppState>()(
       speaker: meeting.speakers.find((s) => s.id === seg.speakerId)?.displayName ?? "Speaker",
       text: seg.text,
     }));
+    const summarizeCtx = {
+      speakerLabels: [...new Set(meeting.speakers.map((s) => s.displayName.trim()))],
+      youLabel: "Me",
+    };
 
     if (transcript.length === 0) {
       get().updateMeeting(meetingId, { status: "ready" });
@@ -577,7 +581,7 @@ export const useStore = create<AppState>()(
 
     get().updateMeeting(meetingId, { status: "processing", error: undefined });
     try {
-      const result = await getSummarizer().summarize(transcript, meeting.title);
+      const result = await getSummarizer().summarize(transcript, meeting.title, summarizeCtx);
 
       const settings = useSettings.getState();
       const model = getModel(settings.chatProvider, settings.chatModel);
@@ -600,12 +604,28 @@ export const useStore = create<AppState>()(
         owner: a.owner,
         task: a.task,
         due: a.due,
+        urgency: a.urgency ?? "normal",
         status: "open" as const,
       }));
+
+      // Auto-apply names the model confidently overheard, but only over speakers
+      // still showing a generic placeholder — never clobber a name the user set.
+      const nameByLabel = new Map(
+        result.speakerNames
+          .filter((s) => s.confidence === "high" && s.name.trim())
+          .map((s) => [s.label.trim(), s.name.trim()]),
+      );
+      const renamedSpeakers = meeting.speakers.map((sp) =>
+        GENERIC_SPEAKER.test(sp.displayName) && nameByLabel.has(sp.displayName)
+          ? { ...sp, displayName: nameByLabel.get(sp.displayName)! }
+          : sp,
+      );
 
       get().updateMeeting(meetingId, {
         summary: result.summary,
         actionItems,
+        speakers: renamedSpeakers,
+        participants: deriveParticipants(renamedSpeakers),
         status: "ready",
       });
       // Auto-flow action items → the project's task board.

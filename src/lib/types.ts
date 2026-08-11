@@ -24,6 +24,8 @@ export interface ActionItem {
   task: string;
   due?: string;
   status: "open" | "done";
+  /** How time-sensitive the item is, inferred by the AI pass. Absent = normal. */
+  urgency?: "urgent" | "normal";
   sourceSegmentId?: string;
 }
 

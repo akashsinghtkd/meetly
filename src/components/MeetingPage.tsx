@@ -23,7 +23,7 @@ import { CostChip } from "./cost/CostChip";
 import { MeetingIcon } from "./ui";
 import { AudioPlayer, type AudioPlayerHandle } from "./AudioPlayer";
 import { SpeakersBar, SpeakerSelect } from "./Speakers";
-import type { Meeting } from "../lib/types";
+import type { ActionItem, Meeting } from "../lib/types";
 
 function EditableTitle({ meeting }: { meeting: Meeting }) {
   const updateMeeting = useStore((s) => s.updateMeeting);
@@ -303,7 +303,173 @@ function ProcessingBanner() {
   );
 }
 
-type MeetingTab = "summary" | "notes" | "transcript";
+/** A colored initials badge so each person's task group is visually distinct. */
+function OwnerAvatar({ name }: { name: string }) {
+  const initials =
+    name
+      .trim()
+      .split(/\s+/)
+      .map((w) => w[0])
+      .slice(0, 2)
+      .join("")
+      .toUpperCase() || "?";
+  return (
+    <span className="grid h-4 w-4 place-items-center rounded-full bg-accent-soft text-[8px] font-semibold text-accent">
+      {initials}
+    </span>
+  );
+}
+
+const isYouOwner = (owner: string) => /^(you|me)$/i.test((owner || "").trim());
+const ownerLabel = (owner: string) => (isYouOwner(owner) ? "You" : owner.trim());
+
+/** One row in the Overview: check it off, see who owns it, when, and if it's urgent. */
+function OverviewTask({
+  meetingId,
+  item,
+  showOwner,
+}: {
+  meetingId: string;
+  item: ActionItem;
+  showOwner?: boolean;
+}) {
+  const toggle = useStore((s) => s.toggleActionItem);
+  const done = item.status === "done";
+  return (
+    <div className="group flex items-start gap-2.5 -mx-1 rounded px-1 py-1.5 hover:bg-surface-hover">
+      <input
+        type="checkbox"
+        checked={done}
+        onChange={() => toggle(meetingId, item.id)}
+        className="mt-0.5 h-4 w-4 shrink-0 rounded border-ink-faint accent-accent cursor-pointer"
+      />
+      <div className="min-w-0 flex-1">
+        <div className={clsx("text-[15px] leading-snug", done ? "text-ink-faint line-through" : "text-ink")}>
+          {item.task}
+        </div>
+        <div className="mt-1 flex flex-wrap items-center gap-1.5 empty:hidden">
+          {item.urgency === "urgent" && !done && (
+            <span className="inline-flex items-center gap-1 rounded bg-red-50 px-1.5 py-0.5 text-xs font-medium text-red-600">
+              <AlertTriangle className="h-3 w-3" /> Urgent
+            </span>
+          )}
+          {showOwner && item.owner?.trim() && (
+            <span className="rounded bg-surface-active px-1.5 py-0.5 text-xs text-ink-light">
+              {ownerLabel(item.owner)}
+            </span>
+          )}
+          {item.due && (
+            <span className="rounded bg-surface-active px-1.5 py-0.5 text-xs text-ink-faint">
+              {item.due}
+            </span>
+          )}
+        </div>
+      </div>
+    </div>
+  );
+}
+
+/**
+ * The at-a-glance answer to "who has to do what": urgent items first, then your
+ * to-dos, then each other person's, and finally what the meeting was about.
+ */
+function Overview({ meeting }: { meeting: Meeting }) {
+  const summarize = useStore((s) => s.summarizeMeeting);
+  const canProcess = meeting.transcript.length > 0 && meeting.status !== "processing";
+  const items = meeting.actionItems;
+
+  if (!meeting.summary && items.length === 0) {
+    return (
+      <div className="rounded-xl border border-dashed border-line bg-surface-sidebar/60 py-12 px-6 text-center">
+        <Sparkles className="h-5 w-5 text-ink-faint mx-auto mb-3" />
+        <p className="text-ink font-medium mb-1">No overview yet</p>
+        <p className="text-ink-light text-sm max-w-xs mx-auto mb-4">
+          {meeting.transcript.length
+            ? "Generate notes and Meetly will lay out who needs to do what."
+            : "Once this meeting has a transcript, the overview appears here."}
+        </p>
+        {canProcess && (
+          <button
+            onClick={() => summarize(meeting.id)}
+            className="inline-flex items-center gap-1.5 rounded-md bg-accent text-white px-3 py-1.5 text-sm font-medium hover:bg-accent-hover"
+          >
+            <Sparkles className="h-4 w-4" /> Generate notes
+          </button>
+        )}
+      </div>
+    );
+  }
+
+  const openFirst = (a: ActionItem, b: ActionItem) =>
+    a.status === b.status ? 0 : a.status === "open" ? -1 : 1;
+  const urgent = items.filter((a) => a.urgency === "urgent" && a.status !== "done");
+  const yours = items.filter((a) => isYouOwner(a.owner)).sort(openFirst);
+  const others: Record<string, ActionItem[]> = {};
+  for (const a of items) {
+    if (isYouOwner(a.owner)) continue;
+    const key = a.owner?.trim() || "Unassigned";
+    (others[key] ||= []).push(a);
+  }
+  const ownerNames = Object.keys(others).sort();
+
+  return (
+    <>
+      {urgent.length > 0 && (
+        <Block icon={<AlertTriangle className="h-4 w-4 text-red-500" />} title="Urgent" count={urgent.length}>
+          <div className="space-y-0.5">
+            {urgent.map((a) => (
+              <OverviewTask key={a.id} meetingId={meeting.id} item={a} showOwner />
+            ))}
+          </div>
+        </Block>
+      )}
+
+      <Block icon={<CheckSquare className="h-4 w-4" />} title="What you need to do" count={yours.length}>
+        {yours.length ? (
+          <div className="space-y-0.5">
+            {yours.map((a) => (
+              <OverviewTask key={a.id} meetingId={meeting.id} item={a} />
+            ))}
+          </div>
+        ) : (
+          <p className="text-ink-faint text-sm">Nothing assigned to you.</p>
+        )}
+      </Block>
+
+      {ownerNames.map((name) => (
+        <Block key={name} icon={<OwnerAvatar name={name} />} title={name} count={others[name].length}>
+          <div className="space-y-0.5">
+            {others[name].sort(openFirst).map((a) => (
+              <OverviewTask key={a.id} meetingId={meeting.id} item={a} />
+            ))}
+          </div>
+        </Block>
+      ))}
+
+      {meeting.summary && (
+        <Block icon={<Sparkles className="h-4 w-4" />} title="What we discussed">
+          {meeting.summary.executive ? (
+            <p className="text-ink leading-relaxed">{meeting.summary.executive}</p>
+          ) : (
+            <p className="text-ink-faint text-sm">No summary captured.</p>
+          )}
+          {meeting.summary.decisions.length > 0 && (
+            <ul className="mt-3 space-y-1.5">
+              {meeting.summary.decisions.map((d, i) => (
+                <li key={i} className="flex gap-2.5 text-ink text-[15px]">
+                  <span className="mt-2 h-1.5 w-1.5 rounded-full bg-ink-light shrink-0" />
+                  {d}
+                </li>
+              ))}
+            </ul>
+          )}
+        </Block>
+      )}
+    </>
+  );
+}
+
+type MeetingTab = "overview" | "summary" | "notes" | "transcript";
 
 export function MeetingPage({ meetingId, onOpenChat }: { meetingId: string; onOpenChat: () => void }) {
   const meeting = useStore((s) => s.meetings.find((m) => m.id === meetingId));
@@ -321,7 +487,7 @@ export function MeetingPage({ meetingId, onOpenChat }: { meetingId: string; onOp
       anyEstimated: mine.some((r) => r.estimated),
     };
   }, [records, meetingId]);
-  const [tab, setTab] = useState<MeetingTab>("summary");
+  const [tab, setTab] = useState<MeetingTab>("overview");
   const playerRef = useRef<AudioPlayerHandle>(null);
   // Updated ~2×/sec by the player; drives the transcript highlight.
   const [playhead, setPlayhead] = useState<number | undefined>(undefined);
@@ -341,7 +507,9 @@ export function MeetingPage({ meetingId, onOpenChat }: { meetingId: string; onOp
     );
   };
 
+  const openItems = meeting.actionItems.filter((a) => a.status !== "done").length;
   const tabs: { id: MeetingTab; label: string; count?: number }[] = [
+    { id: "overview", label: "Overview", count: openItems || undefined },
     { id: "summary", label: "Summary" },
     { id: "notes", label: "Notes" },
     { id: "transcript", label: "Transcript", count: meeting.transcript.length },
@@ -439,6 +607,8 @@ export function MeetingPage({ meetingId, onOpenChat }: { meetingId: string; onOp
               </button>
             ))}
           </div>
+
+          {tab === "overview" && <Overview meeting={meeting} />}
 
           {tab === "summary" &&
             (meeting.summary ? (

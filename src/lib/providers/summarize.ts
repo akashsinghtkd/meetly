@@ -8,14 +8,26 @@ import { chatCompletion } from "./chat";
 import type { Summary } from "../types";
 
 export interface SummaryActionItem {
+  /** The person responsible — "You" for the user, otherwise a speaker's name/label. */
   owner: string;
   task: string;
   due?: string;
+  urgency?: "urgent" | "normal";
+}
+
+/** A real name the model overheard for a still-generic speaker label. */
+export interface InferredSpeaker {
+  /** The label as it appears in the transcript, e.g. "Speaker 2". */
+  label: string;
+  /** The name inferred from the conversation, e.g. "Sarah". */
+  name: string;
+  confidence: "high" | "medium" | "low";
 }
 
 export interface SummaryResult {
   summary: Summary;
   actionItems: SummaryActionItem[];
+  speakerNames: InferredSpeaker[];
   inputTokens?: number;
   outputTokens?: number;
   estimated: boolean;
@@ -26,24 +38,55 @@ export interface TranscriptLine {
   text: string;
 }
 
+/** Extra context so the model can attribute tasks and learn names. */
+export interface SummarizeContext {
+  /** Distinct speaker labels present in the transcript (e.g. ["Me", "Speaker 2"]). */
+  speakerLabels: string[];
+  /** Which label is the user these notes are for — their tasks get owner "You". */
+  youLabel: string;
+}
+
 export interface Summarizer {
   providerId: string;
   modelId: string;
-  summarize(transcript: TranscriptLine[], title: string): Promise<SummaryResult>;
+  summarize(
+    transcript: TranscriptLine[],
+    title: string,
+    ctx?: SummarizeContext,
+  ): Promise<SummaryResult>;
 }
 
 const SYSTEM_PROMPT =
   "You are an expert meeting-notes assistant. You read a meeting transcript and " +
-  "produce concise, accurate notes. Respond with ONLY a raw JSON object — no " +
-  "markdown, no code fences. Only include items that are actually supported by " +
-  "the transcript; use empty arrays when there is nothing to report.";
+  "produce concise, accurate notes, and you keep careful track of WHO is " +
+  "responsible for WHAT. Respond with ONLY a raw JSON object — no markdown, no " +
+  "code fences. Only include items that are actually supported by the " +
+  "transcript; use empty arrays when there is nothing to report.";
 
-function buildUserPrompt(transcript: TranscriptLine[], title: string): string {
+function buildUserPrompt(
+  transcript: TranscriptLine[],
+  title: string,
+  ctx?: SummarizeContext,
+): string {
   const lines = transcript.map((t) => `${t.speaker}: ${t.text}`).join("\n");
+  const youLabel = ctx?.youLabel ?? "Me";
+  const labels = ctx?.speakerLabels?.length ? ctx.speakerLabels.join(", ") : youLabel;
   return `Meeting title: ${title}
+
+Speakers in this transcript: ${labels}
+"${youLabel}" is the user these notes are for — attribute their tasks with owner "You".
 
 Transcript:
 ${lines}
+
+Instructions:
+- Attribute every action item to the ONE person responsible for it, using their
+  speaker label (or a real name if you are confident of it), or "You" for ${youLabel}.
+- Mark "urgency": "urgent" only when the transcript shows real time pressure — an
+  explicit "urgent"/"ASAP", a near-term deadline, or a stated blocker. Otherwise "normal".
+- For any generic label like "Speaker 2", try to infer the person's real name from
+  the conversation — being addressed by name ("Sarah, can you…"), self-introductions,
+  or sign-offs. Only include a name you actually saw evidence for, with a confidence.
 
 Return a JSON object with EXACTLY this shape:
 {
@@ -52,11 +95,16 @@ Return a JSON object with EXACTLY this shape:
   "risks": ["short risk", ...],
   "openQuestions": ["open question", ...],
   "nextAgenda": ["agenda item for next time", ...],
-  "actionItems": [{"owner": "person or empty string", "task": "what to do", "due": "e.g. Fri or empty string"}]
+  "speakerNames": [{"label": "Speaker 2", "name": "Sarah", "confidence": "high|medium|low"}],
+  "actionItems": [{"owner": "You|Sarah|Speaker 2", "task": "what to do", "due": "e.g. Fri or empty string", "urgency": "urgent|normal"}]
 }`;
 }
 
-function normalizeSummary(raw: any): { summary: Summary; actionItems: SummaryActionItem[] } {
+function normalizeSummary(raw: any): {
+  summary: Summary;
+  actionItems: SummaryActionItem[];
+  speakerNames: InferredSpeaker[];
+} {
   const arr = (v: any): string[] => (Array.isArray(v) ? v.filter((x) => typeof x === "string") : []);
   const summary: Summary = {
     executive: typeof raw?.summary === "string" ? raw.summary : "",
@@ -72,9 +120,23 @@ function normalizeSummary(raw: any): { summary: Summary; actionItems: SummaryAct
           owner: typeof a.owner === "string" ? a.owner : "",
           task: a.task,
           due: typeof a.due === "string" && a.due.trim() ? a.due : undefined,
+          urgency: a.urgency === "urgent" ? "urgent" : "normal",
         }))
     : [];
-  return { summary, actionItems };
+  const confidences = ["high", "medium", "low"];
+  const speakerNames: InferredSpeaker[] = Array.isArray(raw?.speakerNames)
+    ? raw.speakerNames
+        .filter(
+          (s: any) =>
+            s && typeof s.label === "string" && typeof s.name === "string" && s.name.trim(),
+        )
+        .map((s: any) => ({
+          label: s.label.trim(),
+          name: s.name.trim(),
+          confidence: confidences.includes(s.confidence) ? s.confidence : "low",
+        }))
+    : [];
+  return { summary, actionItems, speakerNames };
 }
 
 class OpenAISummarizer implements Summarizer {
@@ -84,12 +146,16 @@ class OpenAISummarizer implements Summarizer {
     private apiKey: string,
   ) {}
 
-  async summarize(transcript: TranscriptLine[], title: string): Promise<SummaryResult> {
+  async summarize(
+    transcript: TranscriptLine[],
+    title: string,
+    ctx?: SummarizeContext,
+  ): Promise<SummaryResult> {
     const out = await chatCompletion(
       this.modelId,
       this.apiKey,
       SYSTEM_PROMPT,
-      buildUserPrompt(transcript, title),
+      buildUserPrompt(transcript, title, ctx),
       true,
     );
     let parsed: any = {};
@@ -100,10 +166,11 @@ class OpenAISummarizer implements Summarizer {
       const match = out.content.match(/\{[\s\S]*\}/);
       if (match) parsed = JSON.parse(match[0]);
     }
-    const { summary, actionItems } = normalizeSummary(parsed);
+    const { summary, actionItems, speakerNames } = normalizeSummary(parsed);
     return {
       summary,
       actionItems,
+      speakerNames,
       inputTokens: out.inputTokens,
       outputTokens: out.outputTokens,
       estimated: false,
@@ -115,7 +182,11 @@ class MockSummarizer implements Summarizer {
   providerId = "mock";
   constructor(public modelId: string) {}
 
-  async summarize(transcript: TranscriptLine[], _title: string): Promise<SummaryResult> {
+  async summarize(
+    transcript: TranscriptLine[],
+    _title: string,
+    _ctx?: SummarizeContext,
+  ): Promise<SummaryResult> {
     const preview = transcript.slice(0, 3).map((t) => t.text).join(" ");
     return {
       summary: {
@@ -128,6 +199,7 @@ class MockSummarizer implements Summarizer {
         nextAgenda: [],
       },
       actionItems: [],
+      speakerNames: [],
       estimated: true,
     };
   }
