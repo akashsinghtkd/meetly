@@ -8,6 +8,11 @@
 //! `canJoinAllSpaces | stationary | ignoresCycle | fullScreenAuxiliary` makes
 //! it follow the user everywhere, including over full-screen calls, without
 //! ever taking focus away from the call.
+//!
+//! Windows has no Spaces, but the same goal — float over a full-screen call
+//! without stealing focus — needs the `WS_EX_NOACTIVATE | WS_EX_TOOLWINDOW |
+//! WS_EX_TOPMOST` extended styles plus a periodic `SetWindowPos(HWND_TOPMOST)`.
+//! See the [`win`] module.
 
 use tauri::{AppHandle, Manager};
 
@@ -38,8 +43,16 @@ pub fn pin(app: &AppHandle) {
     on_main(app, |app| pin_now(app));
 }
 
-/// Turn the overlay's plain `NSWindow` into a non-activating `NSPanel`. Call
-/// once at startup, before [`pin`].
+/// Give the pill the OS-specific treatment that lets it float over full-screen
+/// calls without stealing focus. Call once at startup, before [`pin`].
+///
+/// - macOS: reclass the plain `NSWindow` to a non-activating `NSPanel`.
+/// - Windows: add the non-activating, tool-window, topmost extended styles.
+pub fn make_panel(app: &AppHandle) {
+    on_main(app, |app| panel_now(app));
+}
+
+/// macOS: reclass the live window to a non-activating `NSPanel`.
 ///
 /// A regular `NSWindow` — even with `canJoinAllSpaces` — is relegated by the
 /// window server to its home Space, so over a full-screen app the pill lands
@@ -53,38 +66,41 @@ pub fn pin(app: &AppHandle) {
 /// hiding when their app is not frontmost, which for a background recorder pill
 /// would mean "hide during every call".
 #[cfg(target_os = "macos")]
-pub fn make_panel(app: &AppHandle) {
-    on_main(app, |app| {
-        let Some(win) = app.get_webview_window("overlay") else {
-            return;
-        };
-        let Ok(ptr) = win.ns_window() else {
-            return;
-        };
-        use objc2::runtime::{AnyClass, AnyObject};
-        let ns_window = ptr as *mut AnyObject;
-        unsafe {
-            let panel_cls: &AnyClass = objc2::class!(NSPanel);
-            // Bypass objc2's safe `set_class` wrapper: it debug-asserts the two
-            // classes have equal instance size and would panic the dev build if
-            // Apple ever pads NSPanel — the raw call is what tauri-nspanel uses.
-            objc2::ffi::object_setClass(ns_window, panel_cls as *const AnyClass);
+fn panel_now(app: &AppHandle) {
+    let Some(win) = app.get_webview_window("overlay") else {
+        return;
+    };
+    let Ok(ptr) = win.ns_window() else {
+        return;
+    };
+    use objc2::runtime::{AnyClass, AnyObject};
+    let ns_window = ptr as *mut AnyObject;
+    unsafe {
+        let panel_cls: &AnyClass = objc2::class!(NSPanel);
+        // Bypass objc2's safe `set_class` wrapper: it debug-asserts the two
+        // classes have equal instance size and would panic the dev build if
+        // Apple ever pads NSPanel — the raw call is what tauri-nspanel uses.
+        objc2::ffi::object_setClass(ns_window, panel_cls as *const AnyClass);
 
-            let mask: usize = objc2::msg_send![ns_window, styleMask];
-            let _: () = objc2::msg_send![ns_window, setStyleMask: mask | NS_NONACTIVATING_PANEL_MASK];
-            let _: () = objc2::msg_send![ns_window, setHidesOnDeactivate: false];
-            let _: () = objc2::msg_send![ns_window, setBecomesKeyOnlyIfNeeded: true];
+        let mask: usize = objc2::msg_send![ns_window, styleMask];
+        let _: () = objc2::msg_send![ns_window, setStyleMask: mask | NS_NONACTIVATING_PANEL_MASK];
+        let _: () = objc2::msg_send![ns_window, setHidesOnDeactivate: false];
+        let _: () = objc2::msg_send![ns_window, setBecomesKeyOnlyIfNeeded: true];
 
-            eprintln!(
-                "[meetly] overlay reclassed to: {}",
-                (*ns_window).class().name().to_string_lossy()
-            );
-        }
-    });
+        eprintln!(
+            "[meetly] overlay reclassed to: {}",
+            (*ns_window).class().name().to_string_lossy()
+        );
+    }
 }
 
-#[cfg(not(target_os = "macos"))]
-pub fn make_panel(_app: &AppHandle) {}
+#[cfg(target_os = "windows")]
+fn panel_now(app: &AppHandle) {
+    win::make_panel(app);
+}
+
+#[cfg(not(any(target_os = "macos", target_os = "windows")))]
+fn panel_now(_app: &AppHandle) {}
 
 /// Show the pill and make sure it is floating. Use this everywhere instead of
 /// a bare `show()`, so the window can never come back un-pinned.
@@ -168,6 +184,11 @@ fn pin_now(app: &AppHandle) {
             }
         }
     }
+
+    // Re-assert topmost z-order (non-activating) so another app going full screen
+    // can't bury the pill. Cheap enough to run on every poll tick.
+    #[cfg(target_os = "windows")]
+    win::keep_on_top(app);
 }
 
 /// Bring the pill to the front of its level on the *Space the user is currently
@@ -190,6 +211,73 @@ fn order_front(app: &AppHandle) {
         let ns_window = ptr as *mut AnyObject;
         unsafe {
             let _: () = objc2::msg_send![ns_window, orderFrontRegardless];
+        }
+    }
+}
+
+/// Windows equivalent of the non-activating NSPanel behaviour. There are no
+/// Spaces on Windows, so `pin_now`'s cross-platform `set_always_on_top` handles
+/// most of it; these extended styles add the two things Tauri doesn't:
+/// `WS_EX_NOACTIVATE` (the pill never takes focus from the call, even on click)
+/// and `WS_EX_TOOLWINDOW` (keep it out of Alt-Tab and the taskbar).
+#[cfg(target_os = "windows")]
+mod win {
+    use raw_window_handle::{HasWindowHandle, RawWindowHandle};
+    use tauri::{AppHandle, Manager};
+    use windows::Win32::Foundation::HWND;
+    use windows::Win32::UI::WindowsAndMessaging::{
+        GetWindowLongPtrW, SetWindowLongPtrW, SetWindowPos, GWL_EXSTYLE, HWND_TOPMOST,
+        SWP_FRAMECHANGED, SWP_NOACTIVATE, SWP_NOMOVE, SWP_NOSIZE, WS_EX_NOACTIVATE,
+        WS_EX_TOOLWINDOW, WS_EX_TOPMOST,
+    };
+
+    /// The overlay window's `HWND`, via the version-stable raw-window-handle API
+    /// (so we don't couple to whichever `windows` version Tauri re-exports).
+    fn hwnd(app: &AppHandle) -> Option<HWND> {
+        let win = app.get_webview_window("overlay")?;
+        match win.window_handle().ok()?.as_raw() {
+            RawWindowHandle::Win32(h) => Some(HWND(h.hwnd.get() as *mut core::ffi::c_void)),
+            _ => None,
+        }
+    }
+
+    /// Add the non-activating / tool-window / topmost extended styles, once.
+    pub fn make_panel(app: &AppHandle) {
+        let Some(h) = hwnd(app) else {
+            return;
+        };
+        unsafe {
+            let ex = GetWindowLongPtrW(h, GWL_EXSTYLE);
+            let add = (WS_EX_NOACTIVATE.0 | WS_EX_TOOLWINDOW.0 | WS_EX_TOPMOST.0) as isize;
+            SetWindowLongPtrW(h, GWL_EXSTYLE, ex | add);
+            // SWP_FRAMECHANGED makes the new extended styles take effect now.
+            let _ = SetWindowPos(
+                h,
+                Some(HWND_TOPMOST),
+                0,
+                0,
+                0,
+                0,
+                SWP_NOMOVE | SWP_NOSIZE | SWP_NOACTIVATE | SWP_FRAMECHANGED,
+            );
+        }
+    }
+
+    /// Re-assert topmost z-order without activating — called every poll tick.
+    pub fn keep_on_top(app: &AppHandle) {
+        let Some(h) = hwnd(app) else {
+            return;
+        };
+        unsafe {
+            let _ = SetWindowPos(
+                h,
+                Some(HWND_TOPMOST),
+                0,
+                0,
+                0,
+                0,
+                SWP_NOMOVE | SWP_NOSIZE | SWP_NOACTIVATE,
+            );
         }
     }
 }

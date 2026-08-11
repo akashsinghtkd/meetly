@@ -35,9 +35,13 @@ chrono = { version = "0.4", features = ["serde"] }
 # HTTP (transcription API calls happen in Rust to avoid CORS + keep keys native)
 reqwest = { version = "0.12", default-features = false, features = ["multipart", "json", "rustls-tls"] }
 
-# Reads the CapabilityAccessManager consent store to detect mic use.
+# winreg: read the CapabilityAccessManager consent store to detect mic use.
+# windows + raw-window-handle: give the overlay pill non-activating, always-on-top
+# behaviour so it floats over full-screen calls — the analog of the macOS NSPanel.
 [target.'cfg(windows)'.dependencies]
 winreg = "0.52"
+windows = { version = "0.61", features = ["Win32_Foundation", "Win32_UI_WindowsAndMessaging"] }
+raw-window-handle = "0.6"
 
 # Raw AppKit/AVFoundation access: overlay window level + mic authorization.
 [target.'cfg(target_os = "macos")'.dependencies]

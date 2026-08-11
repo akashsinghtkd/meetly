@@ -38,6 +38,7 @@ dependencies = [
  "cpal",
  "hound",
  "objc2",
+ "raw-window-handle",
  "reqwest 0.12.28",
  "rusqlite",
  "serde",
@@ -46,6 +47,7 @@ dependencies = [
  "tauri-build",
  "tauri-plugin-dialog",
  "tauri-plugin-opener",
+ "windows 0.61.3",
  "winreg 0.52.0",
 ]
 

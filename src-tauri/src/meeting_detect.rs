@@ -8,7 +8,9 @@
 //! and emits `meeting-detected` / `meeting-ended`, and shows the floating overlay
 //! window so the user can one-tap record.
 //!
-//! Windows detection is a stub for now (Phase 2) so the app still compiles there.
+//! Windows uses the same idea via the CapabilityAccessManager consent store —
+//! each app currently holding the mic has a `LastUsedTimeStop` of 0 (see the
+//! `win` module) — and likewise needs no extra permission.
 
 use std::sync::atomic::{AtomicBool, Ordering};
 use std::time::Duration;
