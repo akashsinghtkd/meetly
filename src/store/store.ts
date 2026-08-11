@@ -5,6 +5,8 @@ import { seedMeetings, seedProjects, seedTasks, SPEAKER_COLORS, PROJECT_COLORS }
 import { cloudEnabled } from "../lib/supabase";
 import { persistStorage } from "../lib/persistStorage";
 import { defaultSystemDevice, startRecording, stopRecording } from "../lib/tauri";
+import { currentEvent } from "../lib/calendar";
+import { useCalendar } from "./calendarStore";
 import { startLiveSession, stopLiveSession } from "../lib/liveTranscription";
 import { getSummarizer } from "../lib/providers/summarize";
 import { enhanceNotes } from "../lib/providers/notes";
@@ -94,6 +96,7 @@ interface AppState {
 
   // recording lifecycle
   startMeeting: (projectId?: string, opts?: { micOnly?: boolean }) => Promise<void>;
+  enrichFromCalendar: (meetingId: string) => Promise<void>;
   stopMeeting: () => Promise<void>;
   summarizeMeeting: (meetingId: string) => Promise<void>;
   enhanceMeeting: (meetingId: string) => Promise<void>;
@@ -416,6 +419,33 @@ export const useStore = create<AppState>()(
     }
     // Begin live transcription (real chunk events in the app; mock timer in browser).
     startLiveSession(meeting.id);
+    // Enrich from the calendar in the background so recording stays instant:
+    // borrow the current event's title and attendee roster (the roster gives
+    // speaker-naming a real head start instead of guessing from scratch).
+    get().enrichFromCalendar(meeting.id);
+  },
+
+  enrichFromCalendar: async (meetingId) => {
+    try {
+      await useCalendar.getState().refresh();
+      const ev = currentEvent(useCalendar.getState().events);
+      if (!ev) return;
+      const m = get().meetings.find((x) => x.id === meetingId);
+      if (!m) return;
+      const patch: Partial<Meeting> = {};
+      // Only take the calendar title if the user hasn't titled it themselves.
+      if (ev.title.trim() && (!m.title.trim() || m.title === "Untitled meeting")) {
+        patch.title = ev.title.trim();
+      }
+      if (ev.attendees.length) {
+        patch.attendees = ev.attendees;
+        // Show the invitees right away; transcription later refines to who spoke.
+        if (m.participants.length === 0) patch.participants = ev.attendees;
+      }
+      if (Object.keys(patch).length) get().updateMeeting(meetingId, patch);
+    } catch (e) {
+      console.error("[calendar] enrich failed:", e);
+    }
   },
 
   stopMeeting: async () => {
@@ -562,6 +592,7 @@ export const useStore = create<AppState>()(
     const summarizeCtx = {
       speakerLabels: [...new Set(meeting.speakers.map((s) => s.displayName.trim()))],
       youLabel: "Me",
+      knownPeople: meeting.attendees ?? [],
     };
 
     if (transcript.length === 0) {

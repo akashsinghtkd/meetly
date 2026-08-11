@@ -106,6 +106,8 @@ export interface Meeting {
   durationSecs: number;
   status: MeetingStatus;
   participants: string[];
+  /** Invitees from the matched calendar event — the roster that seeds speaker naming. */
+  attendees?: string[];
   micPath?: string;
   systemPath?: string;
   speakers: Speaker[];

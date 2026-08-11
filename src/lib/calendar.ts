@@ -35,3 +35,18 @@ export async function upcomingEvents(days = 7): Promise<CalEvent[]> {
   const { invoke } = await import("@tauri-apps/api/core");
   return invoke<CalEvent[]>("upcoming_events", { days });
 }
+
+/**
+ * The calendar event a recording started "now" most likely belongs to: one that
+ * is ongoing (or starts/ended within a few minutes of now). Picks the event
+ * whose start is closest to now. `null` when nothing lines up.
+ */
+export function currentEvent(events: CalEvent[], nowSec = Date.now() / 1000): CalEvent | null {
+  const LEAD = 5 * 60; // may start recording a few min before the scheduled start
+  const LAG = 5 * 60; // …or a few min after it ended
+  const candidates = events.filter((e) => nowSec >= e.start - LEAD && nowSec <= e.end + LAG);
+  if (candidates.length === 0) return null;
+  return candidates.reduce((best, e) =>
+    Math.abs(e.start - nowSec) < Math.abs(best.start - nowSec) ? e : best,
+  );
+}

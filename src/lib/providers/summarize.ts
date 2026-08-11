@@ -44,6 +44,8 @@ export interface SummarizeContext {
   speakerLabels: string[];
   /** Which label is the user these notes are for — their tasks get owner "You". */
   youLabel: string;
+  /** Invitees from the calendar event, if known — the roster to map speakers onto. */
+  knownPeople?: string[];
 }
 
 export interface Summarizer {
@@ -71,11 +73,14 @@ function buildUserPrompt(
   const lines = transcript.map((t) => `${t.speaker}: ${t.text}`).join("\n");
   const youLabel = ctx?.youLabel ?? "Me";
   const labels = ctx?.speakerLabels?.length ? ctx.speakerLabels.join(", ") : youLabel;
+  const roster = ctx?.knownPeople?.length
+    ? `\nInvitees on the calendar: ${ctx.knownPeople.join(", ")}. When you map a generic label like "Speaker 2" to a real name, PREFER a name from this list.\n`
+    : "";
   return `Meeting title: ${title}
 
 Speakers in this transcript: ${labels}
 "${youLabel}" is the user these notes are for — attribute their tasks with owner "You".
-
+${roster}
 Transcript:
 ${lines}
 
@@ -86,7 +91,8 @@ Instructions:
   explicit "urgent"/"ASAP", a near-term deadline, or a stated blocker. Otherwise "normal".
 - For any generic label like "Speaker 2", try to infer the person's real name from
   the conversation — being addressed by name ("Sarah, can you…"), self-introductions,
-  or sign-offs. Only include a name you actually saw evidence for, with a confidence.
+  or sign-offs — preferring the calendar invitees above. Only include a name you
+  actually saw evidence for, with a confidence.
 
 Return a JSON object with EXACTLY this shape:
 {
