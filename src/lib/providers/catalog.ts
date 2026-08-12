@@ -42,6 +42,8 @@ export interface ProviderInfo {
   apiBase?: string;
   /** Where to create an API key, shown in the provider UI. */
   keyUrl?: string;
+  /** Expected key prefix — used to warn when a key is pasted in the wrong slot. */
+  keyPrefix?: string;
   models: ModelInfo[];
 }
 
@@ -51,6 +53,7 @@ export const PROVIDERS: ProviderInfo[] = [
     label: "OpenAI",
     requiresKey: true,
     keyUrl: "https://platform.openai.com/api-keys",
+    keyPrefix: "sk-",
     models: [
       {
         id: "gpt-4o-transcribe",
@@ -142,6 +145,7 @@ export const PROVIDERS: ProviderInfo[] = [
     // exact same native code path as OpenAI — only the base URL differs.
     apiBase: "https://generativelanguage.googleapis.com/v1beta/openai",
     keyUrl: "https://aistudio.google.com/app/apikey",
+    keyPrefix: "AIza",
     models: [
       {
         id: "gemini-2.5-flash",

@@ -107,7 +107,10 @@ function AiProviderCard() {
     (p) => !p.comingSoon && p.requiresKey && p.models.some((m) => m.capabilities.includes("chat")),
   );
   const active = providers.find((p) => p.id === chatProvider) ?? providers[0];
-  const activeHasKey = Boolean(apiKeys[active.id]?.trim());
+  const activeKey = apiKeys[active.id]?.trim() ?? "";
+  const activeHasKey = Boolean(activeKey);
+  // Catch the common mistake of pasting a key from the wrong provider.
+  const keyMismatch = Boolean(activeKey && active.keyPrefix && !activeKey.startsWith(active.keyPrefix));
 
   // Picking a provider points BOTH notes/chat and (if supported) transcription
   // at it, so one key can power everything — the model tier follows the preset.
@@ -182,6 +185,13 @@ function AiProviderCard() {
           <span className="text-[12px] text-ink-faint">Needed to turn on real AI.</span>
         )}
       </div>
+      {keyMismatch && (
+        <p className="mt-2 rounded-md bg-amber-50 px-2.5 py-2 text-[12px] text-amber-700">
+          That doesn't look like {article(active.label)} {active.label} key — those start with{" "}
+          <code className="font-mono">{active.keyPrefix}…</code>. Make sure you haven't pasted a key
+          from a different provider.
+        </p>
+      )}
     </Card>
   );
 }
