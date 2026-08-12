@@ -7,6 +7,7 @@ import { persistStorage } from "../lib/persistStorage";
 import { defaultSystemDevice, startRecording, stopRecording } from "../lib/tauri";
 import { currentEvent } from "../lib/calendar";
 import { useCalendar } from "./calendarStore";
+import { getTemplate } from "../lib/templates";
 import { startLiveSession, stopLiveSession } from "../lib/liveTranscription";
 import { startLiveNaming, stopLiveNaming } from "../lib/liveNaming";
 import { getSummarizer } from "../lib/providers/summarize";
@@ -103,6 +104,7 @@ interface AppState {
   enhanceMeeting: (meetingId: string) => Promise<void>;
   // notepad
   setMeetingNotes: (meetingId: string, notes: string) => void;
+  setMeetingTemplate: (meetingId: string, templateId: string) => void;
   enhanceNotesFor: (meetingId: string) => Promise<void>;
   notesBusy: string | null;
   tickElapsed: () => void;
@@ -608,6 +610,7 @@ export const useStore = create<AppState>()(
       speakerLabels: [...new Set(meeting.speakers.map((s) => s.displayName.trim()))],
       youLabel: "Me",
       knownPeople: meeting.attendees ?? [],
+      sections: getTemplate(meeting.templateId).sections,
     };
 
     if (transcript.length === 0) {
@@ -688,6 +691,8 @@ export const useStore = create<AppState>()(
   },
 
   setMeetingNotes: (meetingId, notes) => get().updateMeeting(meetingId, { notes }),
+
+  setMeetingTemplate: (meetingId, templateId) => get().updateMeeting(meetingId, { templateId }),
 
   enhanceNotesFor: async (meetingId) => {
     const meeting = get().meetings.find((m) => m.id === meetingId);

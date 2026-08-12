@@ -2,6 +2,7 @@ import { useLayoutEffect, useMemo, useRef, useState } from "react";
 import {
   AlertTriangle,
   CheckSquare,
+  ChevronDown,
   Copy,
   HelpCircle,
   Link2,
@@ -25,7 +26,8 @@ import { MeetingIcon } from "./ui";
 import { AudioPlayer, type AudioPlayerHandle } from "./AudioPlayer";
 import { SpeakersBar, SpeakerSelect } from "./Speakers";
 import { FollowupEmailModal } from "./FollowupEmailModal";
-import type { ActionItem, Meeting } from "../lib/types";
+import { MEETING_TEMPLATES, getTemplate } from "../lib/templates";
+import type { ActionItem, Meeting, Summary } from "../lib/types";
 
 function EditableTitle({ meeting }: { meeting: Meeting }) {
   const updateMeeting = useStore((s) => s.updateMeeting);
@@ -455,20 +457,113 @@ function Overview({ meeting }: { meeting: Meeting }) {
           ) : (
             <p className="text-ink-faint text-sm">No summary captured.</p>
           )}
-          {meeting.summary.decisions.length > 0 && (
-            <ul className="mt-3 space-y-1.5">
-              {meeting.summary.decisions.map((d, i) => (
-                <li key={i} className="flex gap-2.5 text-ink text-[15px]">
-                  <span className="mt-2 h-1.5 w-1.5 rounded-full bg-ink-light shrink-0" />
-                  {d}
-                </li>
-              ))}
-            </ul>
-          )}
+          {discussSections(meeting.summary).map((s) => (
+            <div key={s.heading} className="mt-3">
+              <div className="mb-1 text-[12px] font-semibold uppercase tracking-wide text-ink-light">
+                {s.heading}
+              </div>
+              <ul className="space-y-1.5">
+                {s.items.map((d, i) => (
+                  <li key={i} className="flex gap-2.5 text-ink text-[15px]">
+                    <span className="mt-2 h-1.5 w-1.5 rounded-full bg-ink-light shrink-0" />
+                    {d}
+                  </li>
+                ))}
+              </ul>
+            </div>
+          ))}
         </Block>
       )}
     </>
   );
+}
+
+/** Choose the note format (template) for this meeting; regenerate to apply. */
+function TemplatePicker({ meeting }: { meeting: Meeting }) {
+  const setTemplate = useStore((s) => s.setMeetingTemplate);
+  const [open, setOpen] = useState(false);
+  const current = getTemplate(meeting.templateId);
+  return (
+    <span className="relative">
+      <button
+        onClick={() => setOpen((o) => !o)}
+        title="Note format for this meeting"
+        className="flex items-center gap-1.5 rounded-md border border-line px-2.5 py-1.5 text-sm text-ink-light hover:bg-surface-hover"
+      >
+        <span>{current.emoji}</span> {current.label}
+        <ChevronDown className="h-3.5 w-3.5 text-ink-faint" />
+      </button>
+      {open && (
+        <>
+          <div className="fixed inset-0 z-10" onClick={() => setOpen(false)} />
+          <div className="absolute right-0 z-20 mt-1 w-64 rounded-md border border-line bg-surface py-1 shadow-panel">
+            {MEETING_TEMPLATES.map((t) => (
+              <button
+                key={t.id}
+                onClick={() => {
+                  setTemplate(meeting.id, t.id);
+                  setOpen(false);
+                }}
+                className={clsx(
+                  "flex w-full items-start gap-2 px-3 py-2 text-left hover:bg-surface-hover",
+                  current.id === t.id && "bg-accent-soft",
+                )}
+              >
+                <span className="mt-0.5">{t.emoji}</span>
+                <span className="min-w-0">
+                  <span className="block text-sm text-ink">{t.label}</span>
+                  <span className="block text-xs text-ink-faint">{t.blurb}</span>
+                </span>
+              </button>
+            ))}
+          </div>
+        </>
+      )}
+    </span>
+  );
+}
+
+/** The summary's template sections, or the legacy fixed blocks for old meetings. */
+function SectionBlocks({ summary }: { summary: Summary }) {
+  if (summary.sections?.length) {
+    return (
+      <>
+        {summary.sections.map((s) => (
+          <Block
+            key={s.heading}
+            icon={<ListChecks className="h-4 w-4" />}
+            title={s.heading}
+            count={s.items.length}
+          >
+            <BulletList items={s.items} empty="—" />
+          </Block>
+        ))}
+      </>
+    );
+  }
+  return (
+    <>
+      <Block icon={<ListChecks className="h-4 w-4" />} title="Decisions" count={summary.decisions.length}>
+        <BulletList items={summary.decisions} empty="No decisions captured." />
+      </Block>
+      {summary.risks.length > 0 && (
+        <Block icon={<AlertTriangle className="h-4 w-4" />} title="Risks" count={summary.risks.length}>
+          <BulletList items={summary.risks} empty="No risks flagged." />
+        </Block>
+      )}
+      {summary.openQuestions.length > 0 && (
+        <Block icon={<HelpCircle className="h-4 w-4" />} title="Open questions">
+          <BulletList items={summary.openQuestions} empty="None." />
+        </Block>
+      )}
+    </>
+  );
+}
+
+/** Compact sections for the Overview "What we discussed" (falls back to Decisions). */
+function discussSections(summary: Summary) {
+  if (summary.sections?.length) return summary.sections;
+  return summary.decisions.length ? [{ heading: "Decisions", items: summary.decisions }] : [];
 }
 
 type MeetingTab = "overview" | "summary" | "notes" | "transcript";
@@ -525,6 +620,7 @@ export function MeetingPage({ meetingId, onOpenChat }: { meetingId: string; onOp
       <div className="flex items-start justify-between gap-4">
         <EditableTitle meeting={meeting} />
         <div className="flex items-center gap-1 pt-3 shrink-0">
+          <TemplatePicker meeting={meeting} />
           {canProcess && (
             <button
               onClick={() => enhanceMeeting(meeting.id)}
@@ -628,27 +724,7 @@ export function MeetingPage({ meetingId, onOpenChat }: { meetingId: string; onOp
                 <Block icon={<ListChecks className="h-4 w-4" />} title="Summary">
                   <p className="text-ink leading-relaxed">{meeting.summary.executive}</p>
                 </Block>
-                <Block
-                  icon={<ListChecks className="h-4 w-4" />}
-                  title="Decisions"
-                  count={meeting.summary.decisions.length}
-                >
-                  <BulletList items={meeting.summary.decisions} empty="No decisions captured." />
-                </Block>
-                {meeting.summary.risks.length > 0 && (
-                  <Block
-                    icon={<AlertTriangle className="h-4 w-4" />}
-                    title="Risks"
-                    count={meeting.summary.risks.length}
-                  >
-                    <BulletList items={meeting.summary.risks} empty="No risks flagged." />
-                  </Block>
-                )}
-                {meeting.summary.openQuestions.length > 0 && (
-                  <Block icon={<HelpCircle className="h-4 w-4" />} title="Open questions">
-                    <BulletList items={meeting.summary.openQuestions} empty="None." />
-                  </Block>
-                )}
+                <SectionBlocks summary={meeting.summary} />
               </>
             ) : (
               <div className="rounded-xl border border-dashed border-line bg-surface-sidebar/60 py-12 px-6 text-center">

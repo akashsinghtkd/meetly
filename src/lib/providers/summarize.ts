@@ -6,6 +6,7 @@ import { useSettings } from "../../store/settingsStore";
 import { inTauri } from "../tauri";
 import { chatCompletion } from "./chat";
 import { apiBaseFor, isOpenAICompat } from "./catalog";
+import { getTemplate } from "../templates";
 import type { Summary } from "../types";
 
 export interface SummaryActionItem {
@@ -47,6 +48,8 @@ export interface SummarizeContext {
   youLabel: string;
   /** Invitees from the calendar event, if known — the roster to map speakers onto. */
   knownPeople?: string[];
+  /** Template sections to fill (heading + guidance). Defaults to the General template. */
+  sections?: { heading: string; guidance: string }[];
 }
 
 export interface Summarizer {
@@ -77,6 +80,8 @@ function buildUserPrompt(
   const roster = ctx?.knownPeople?.length
     ? `\nInvitees on the calendar: ${ctx.knownPeople.join(", ")}. When you map a generic label like "Speaker 2" to a real name, PREFER a name from this list.\n`
     : "";
+  const sections = ctx?.sections?.length ? ctx.sections : getTemplate().sections;
+  const sectionSpec = sections.map((s, i) => `  ${i + 1}. "${s.heading}" — ${s.guidance}`).join("\n");
   return `Meeting title: ${title}
 
 Speakers in this transcript: ${labels}
@@ -84,6 +89,10 @@ Speakers in this transcript: ${labels}
 ${roster}
 Transcript:
 ${lines}
+
+Fill in these sections (use these EXACT headings, in this order; an empty items
+array when there is nothing to report for a section):
+${sectionSpec}
 
 Instructions:
 - Attribute every action item to the ONE person responsible for it, using their
@@ -98,10 +107,7 @@ Instructions:
 Return a JSON object with EXACTLY this shape:
 {
   "summary": "2-4 sentence executive summary",
-  "decisions": ["short decision", ...],
-  "risks": ["short risk", ...],
-  "openQuestions": ["open question", ...],
-  "nextAgenda": ["agenda item for next time", ...],
+  "sections": [{"heading": "<one of the exact headings above>", "items": ["short bullet", ...]}],
   "speakerNames": [{"label": "Speaker 2", "name": "Sarah", "confidence": "high|medium|low"}],
   "actionItems": [{"owner": "You|Sarah|Speaker 2", "task": "what to do", "due": "e.g. Fri or empty string", "urgency": "urgent|normal"}]
 }`;
@@ -113,8 +119,16 @@ function normalizeSummary(raw: any): {
   speakerNames: InferredSpeaker[];
 } {
   const arr = (v: any): string[] => (Array.isArray(v) ? v.filter((x) => typeof x === "string") : []);
+  const sections = Array.isArray(raw?.sections)
+    ? raw.sections
+        .filter((s: any) => s && typeof s.heading === "string")
+        .map((s: any) => ({ heading: s.heading.trim(), items: arr(s.items) }))
+        .filter((s: { heading: string; items: string[] }) => s.heading && s.items.length > 0)
+    : [];
   const summary: Summary = {
     executive: typeof raw?.summary === "string" ? raw.summary : "",
+    sections,
+    // Legacy fields (older prompts / old meetings) — new prompts return `sections`.
     decisions: arr(raw?.decisions),
     risks: arr(raw?.risks),
     openQuestions: arr(raw?.openQuestions),

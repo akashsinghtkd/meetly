@@ -29,8 +29,16 @@ export interface ActionItem {
   sourceSegmentId?: string;
 }
 
+export interface SummarySection {
+  heading: string;
+  items: string[];
+}
+
 export interface Summary {
   executive: string;
+  /** Template-driven sections (e.g. Decisions, Blockers, Pain points). */
+  sections?: SummarySection[];
+  // Legacy fixed fields — kept so summaries generated before templates still render.
   decisions: string[];
   risks: string[];
   openQuestions: string[];
@@ -115,6 +123,8 @@ export interface Meeting {
   speakers: Speaker[];
   transcript: TranscriptSegment[];
   summary?: Summary;
+  /** Which note template to use (see lib/templates). Undefined = General. */
+  templateId?: string;
   actionItems: ActionItem[];
   /** Your own notes, typed during/after the call (shown in ink). */
   notes?: string;
