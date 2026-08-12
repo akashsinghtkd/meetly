@@ -35,6 +35,8 @@ pub async fn embed_texts(
     model: String,
     api_key: String,
     texts: Vec<String>,
+    // OpenAI-compatible base URL (e.g. Gemini's). Defaults to OpenAI.
+    base_url: Option<String>,
 ) -> Result<EmbedResult, String> {
     if api_key.trim().is_empty() {
         return Err("missing API key".into());
@@ -43,9 +45,14 @@ pub async fn embed_texts(
         return Ok(EmbedResult { vectors: vec![], input_tokens: Some(0) });
     }
 
+    let base = base_url
+        .filter(|b| !b.trim().is_empty())
+        .unwrap_or_else(|| "https://api.openai.com/v1".into());
+    let url = format!("{}/embeddings", base.trim_end_matches('/'));
+
     let client = reqwest::Client::new();
     let resp = client
-        .post("https://api.openai.com/v1/embeddings")
+        .post(url)
         .bearer_auth(api_key)
         .json(&json!({ "model": model, "input": texts }))
         .send()

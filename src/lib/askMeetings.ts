@@ -4,7 +4,7 @@
 
 import { useSettings } from "../store/settingsStore";
 import { useCost } from "../store/costStore";
-import { getModel, chatCostUsd } from "./providers/catalog";
+import { apiBaseFor, chatCostUsd, getModel, isOpenAICompat } from "./providers/catalog";
 import { chatCompletion } from "./providers/chat";
 import { retrievePassages, type Passage } from "./semanticSearch";
 import { inTauri } from "./tauri";
@@ -17,10 +17,10 @@ export interface MeetingAnswer {
   answered: boolean;
 }
 
-/** Can we generate a written answer? (needs an OpenAI chat key under Tauri) */
+/** Can we generate a written answer? (needs an OpenAI-compatible chat key under Tauri) */
 export function canAnswer(): boolean {
   const { chatProvider, apiKeys } = useSettings.getState();
-  return Boolean(inTauri() && chatProvider === "openai" && apiKeys[chatProvider]?.trim());
+  return Boolean(inTauri() && isOpenAICompat(chatProvider) && apiKeys[chatProvider]?.trim());
 }
 
 function dedupeSources(passages: Passage[]): { meetingId: string; title: string }[] {
@@ -56,7 +56,7 @@ export async function askAcrossMeetings(
   const context = passages.map((p, i) => `[${i + 1}] "${p.title}": ${p.text}`).join("\n\n");
   const user = `Question: ${question}\n\nMeeting excerpts:\n${context}`;
 
-  const out = await chatCompletion(chatModel, key, SYSTEM, user, false);
+  const out = await chatCompletion(chatModel, key, SYSTEM, user, false, apiBaseFor(chatProvider));
 
   const model = getModel(chatProvider, chatModel);
   useCost.getState().add({

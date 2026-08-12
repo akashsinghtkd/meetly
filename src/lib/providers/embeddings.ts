@@ -7,6 +7,7 @@
 
 import { useSettings } from "../../store/settingsStore";
 import { inTauri } from "../tauri";
+import { apiBaseFor, isOpenAICompat, modelsFor } from "./catalog";
 
 export interface Embedder {
   /** Identifies the provider so a switch (e.g. adding a key) invalidates caches. */
@@ -14,22 +15,40 @@ export interface Embedder {
   embed(texts: string[]): Promise<number[][]>;
 }
 
-const OPENAI_EMBED_MODEL = "text-embedding-3-small";
-
-class OpenAIEmbedder implements Embedder {
-  id = `openai:${OPENAI_EMBED_MODEL}`;
-  constructor(private apiKey: string) {}
+// Any OpenAI-compatible embeddings provider (OpenAI, Gemini) — only base + model differ.
+class OpenAICompatEmbedder implements Embedder {
+  id: string;
+  constructor(
+    provider: string,
+    private model: string,
+    private apiKey: string,
+    private baseUrl?: string,
+  ) {
+    this.id = `${provider}:${model}`;
+  }
 
   async embed(texts: string[]): Promise<number[][]> {
     if (texts.length === 0) return [];
     const { invoke } = await import("@tauri-apps/api/core");
     const res = await invoke<{ vectors: number[][]; input_tokens: number | null }>("embed_texts", {
-      model: OPENAI_EMBED_MODEL,
+      model: this.model,
       apiKey: this.apiKey,
       texts,
+      baseUrl: this.baseUrl,
     });
     return res.vectors;
   }
+}
+
+/** Real embeddings from the active chat provider, or null to fall back offline. */
+function resolveRemoteEmbedder(): OpenAICompatEmbedder | null {
+  const { chatProvider, apiKeys } = useSettings.getState();
+  const key = apiKeys[chatProvider]?.trim();
+  const model = modelsFor(chatProvider, "embedding")[0]?.id;
+  if (inTauri() && isOpenAICompat(chatProvider) && key && model) {
+    return new OpenAICompatEmbedder(chatProvider, model, key, apiBaseFor(chatProvider));
+  }
+  return null;
 }
 
 // ── Offline fallback: feature-hashed bag-of-words ───────────────────────────
@@ -68,14 +87,12 @@ class LocalEmbedder implements Embedder {
   }
 }
 
-/** OpenAI when a key is configured under Tauri; the offline embedder otherwise. */
+/** The active provider's embeddings when a key is set; the offline embedder otherwise. */
 export function getEmbedder(): Embedder {
-  const key = useSettings.getState().apiKeys?.openai?.trim();
-  if (inTauri() && key) return new OpenAIEmbedder(key);
-  return new LocalEmbedder();
+  return resolveRemoteEmbedder() ?? new LocalEmbedder();
 }
 
-/** True when real (OpenAI) embeddings are in use — for an honest UI label. */
+/** True when real (provider) embeddings are in use — for an honest UI label. */
 export function usingRealEmbeddings(): boolean {
-  return Boolean(inTauri() && useSettings.getState().apiKeys?.openai?.trim());
+  return resolveRemoteEmbedder() !== null;
 }

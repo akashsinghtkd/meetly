@@ -5,6 +5,7 @@
 import { useSettings } from "../../store/settingsStore";
 import { inTauri } from "../tauri";
 import { chatCompletion } from "./chat";
+import { apiBaseFor, isOpenAICompat } from "./catalog";
 import type { Summary } from "../types";
 
 export interface SummaryActionItem {
@@ -145,11 +146,14 @@ function normalizeSummary(raw: any): {
   return { summary, actionItems, speakerNames };
 }
 
-class OpenAISummarizer implements Summarizer {
-  providerId = "openai";
+// Works for any OpenAI-compatible chat provider (OpenAI, Gemini) — only the
+// base URL differs.
+class OpenAICompatSummarizer implements Summarizer {
   constructor(
+    public providerId: string,
     public modelId: string,
     private apiKey: string,
+    private baseUrl?: string,
   ) {}
 
   async summarize(
@@ -163,6 +167,7 @@ class OpenAISummarizer implements Summarizer {
       SYSTEM_PROMPT,
       buildUserPrompt(transcript, title, ctx),
       true,
+      this.baseUrl,
     );
     let parsed: any = {};
     try {
@@ -214,8 +219,8 @@ class MockSummarizer implements Summarizer {
 export function getSummarizer(): Summarizer {
   const { chatProvider, chatModel, apiKeys } = useSettings.getState();
   const key = apiKeys[chatProvider]?.trim();
-  if (inTauri() && chatProvider === "openai" && key) {
-    return new OpenAISummarizer(chatModel, key);
+  if (inTauri() && isOpenAICompat(chatProvider) && key) {
+    return new OpenAICompatSummarizer(chatProvider, chatModel, key, apiBaseFor(chatProvider));
   }
   return new MockSummarizer(chatModel);
 }

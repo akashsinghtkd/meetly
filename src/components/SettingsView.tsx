@@ -1,5 +1,5 @@
 import { useEffect, useMemo, useState } from "react";
-import { Check, Coins, Gauge, KeyRound, Mic, Sparkles, Volume2, Wallet } from "lucide-react";
+import { Check, Coins, ExternalLink, Gauge, KeyRound, Mic, Cpu, Sparkles, Volume2, Wallet } from "lucide-react";
 import clsx from "clsx";
 import { useStore } from "../store/store";
 import { useSettings, PRESETS, type PresetId } from "../store/settingsStore";
@@ -27,6 +27,7 @@ export function SettingsView() {
         </div>
       )}
 
+      <AiProviderCard />
       <PresetCard />
       <BudgetCard />
       <ModelCard capability="transcription" title="Transcription" subtitle="Turns meeting audio into text (billed per minute)." />
@@ -35,6 +36,109 @@ export function SettingsView() {
       <AudioDevicesCard />
       <UsageCard />
     </div>
+  );
+}
+
+async function openExternal(url: string) {
+  try {
+    if (inTauri()) {
+      const { openUrl } = await import("@tauri-apps/plugin-opener");
+      await openUrl(url);
+    } else {
+      window.open(url, "_blank");
+    }
+  } catch {
+    /* ignore */
+  }
+}
+
+/**
+ * Pick and connect the AI provider that powers notes, chat, and semantic search.
+ * OpenAI and Gemini both use the same OpenAI-compatible path, so switching is a
+ * one-click choice + an API key. Works on web, macOS, and Windows.
+ */
+function AiProviderCard() {
+  const chatProvider = useSettings((s) => s.chatProvider);
+  const setChat = useSettings((s) => s.setChat);
+  const apiKeys = useSettings((s) => s.apiKeys);
+  const setApiKey = useSettings((s) => s.setApiKey);
+
+  const providers = PROVIDERS.filter(
+    (p) => !p.comingSoon && p.requiresKey && p.models.some((m) => m.capabilities.includes("chat")),
+  );
+
+  return (
+    <Card
+      icon={<Cpu className="h-4 w-4" />}
+      title="AI provider"
+      subtitle="Who powers your notes, chat, and search. Add a key, then click Use."
+    >
+      <div className="space-y-3">
+        {providers.map((p) => {
+          const active = chatProvider === p.id;
+          const hasKey = Boolean(apiKeys[p.id]?.trim());
+          const chatModels = modelsFor(p.id, "chat");
+          return (
+            <div
+              key={p.id}
+              className={clsx(
+                "rounded-lg border p-4 transition-colors",
+                active ? "border-accent bg-accent-soft/40" : "border-line",
+              )}
+            >
+              <div className="mb-2.5 flex items-center gap-2">
+                <span className="font-semibold text-ink">{p.label}</span>
+                {active && (
+                  <span className="rounded bg-accent px-1.5 py-0.5 text-[10px] font-semibold uppercase tracking-wide text-white">
+                    Active
+                  </span>
+                )}
+                {hasKey ? (
+                  <span className="flex items-center gap-1 text-xs text-emerald-600">
+                    <Check className="h-3.5 w-3.5" /> Connected
+                  </span>
+                ) : (
+                  <span className="text-xs text-ink-faint">No key yet</span>
+                )}
+                {!active && (
+                  <button
+                    onClick={() => {
+                      const m = chatModels[0];
+                      if (m) setChat(p.id, m.id);
+                    }}
+                    disabled={!hasKey}
+                    title={hasKey ? `Use ${p.label} for AI` : "Add a key first"}
+                    className={clsx(
+                      "ml-auto rounded-md px-3 py-1 text-sm font-medium",
+                      hasKey
+                        ? "bg-accent text-white hover:bg-accent-hover"
+                        : "cursor-not-allowed bg-surface-active text-ink-faint",
+                    )}
+                  >
+                    Use
+                  </button>
+                )}
+              </div>
+              <input
+                type="password"
+                value={apiKeys[p.id] ?? ""}
+                onChange={(e) => setApiKey(p.id, e.target.value)}
+                placeholder={p.id === "openai" ? "sk-…" : "API key…"}
+                className="w-full rounded-md border border-line px-3 py-2 font-mono text-sm outline-none focus:border-accent"
+              />
+              {p.keyUrl && (
+                <button
+                  onClick={() => openExternal(p.keyUrl!)}
+                  className="mt-1.5 inline-flex items-center gap-1 text-[12px] text-ink-faint hover:text-accent"
+                >
+                  Get a {p.label} key <ExternalLink className="h-3 w-3" />
+                </button>
+              )}
+            </div>
+          );
+        })}
+      </div>
+    </Card>
   );
 }
 
@@ -250,19 +354,21 @@ function ModelCard({
 
 function ApiKeysCard() {
   const transcriptionProvider = useSettings((s) => s.transcriptionProvider);
-  const chatProvider = useSettings((s) => s.chatProvider);
   const apiKeys = useSettings((s) => s.apiKeys);
   const setApiKey = useSettings((s) => s.setApiKey);
 
+  // Chat-provider keys live in the AI provider card; here we only cover a
+  // transcription-only provider's key (e.g. Deepgram).
   const needed = useMemo(() => {
-    const ids = [...new Set([transcriptionProvider, chatProvider])];
-    return ids.map((id) => getProvider(id)).filter((p) => p && p.requiresKey);
-  }, [transcriptionProvider, chatProvider]);
+    const p = getProvider(transcriptionProvider);
+    const isChatProvider = p?.models.some((m) => m.capabilities.includes("chat"));
+    return p && p.requiresKey && !isChatProvider ? [p] : [];
+  }, [transcriptionProvider]);
 
   if (needed.length === 0) return null;
 
   return (
-    <Card icon={<KeyRound className="h-4 w-4" />} title="API keys" subtitle="Stored locally; sent only to the matching provider.">
+    <Card icon={<KeyRound className="h-4 w-4" />} title="Transcription API key" subtitle="Stored locally; sent only to the matching provider.">
       <div className="space-y-3">
         {needed.map(
           (p) =>

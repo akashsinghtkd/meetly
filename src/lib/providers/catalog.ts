@@ -38,6 +38,10 @@ export interface ProviderInfo {
   requiresKey: boolean;
   /** Not yet implemented end-to-end — shown in UI but not selectable. */
   comingSoon?: boolean;
+  /** OpenAI-compatible base URL (chat/embeddings). Undefined = OpenAI default. */
+  apiBase?: string;
+  /** Where to create an API key, shown in the provider UI. */
+  keyUrl?: string;
   models: ModelInfo[];
 }
 
@@ -46,6 +50,7 @@ export const PROVIDERS: ProviderInfo[] = [
     id: "openai",
     label: "OpenAI",
     requiresKey: true,
+    keyUrl: "https://platform.openai.com/api-keys",
     models: [
       {
         id: "gpt-4o-transcribe",
@@ -133,13 +138,30 @@ export const PROVIDERS: ProviderInfo[] = [
     id: "gemini",
     label: "Google Gemini",
     requiresKey: true,
-    comingSoon: true,
+    // Gemini exposes an OpenAI-compatible API, so chat + embeddings reuse the
+    // exact same native code path as OpenAI — only the base URL differs.
+    apiBase: "https://generativelanguage.googleapis.com/v1beta/openai",
+    keyUrl: "https://aistudio.google.com/app/apikey",
     models: [
       {
         id: "gemini-2.5-flash",
         label: "Gemini 2.5 Flash",
-        capabilities: ["transcription", "chat"],
-        pricing: { perAudioMinuteUsd: 0.003, inputPer1MUsd: 0.3, outputPer1MUsd: 2.5 },
+        capabilities: ["chat"],
+        pricing: { inputPer1MUsd: 0.3, outputPer1MUsd: 2.5 },
+        quality: "great",
+      },
+      {
+        id: "gemini-2.5-pro",
+        label: "Gemini 2.5 Pro",
+        capabilities: ["chat"],
+        pricing: { inputPer1MUsd: 1.25, outputPer1MUsd: 10 },
+        quality: "best",
+      },
+      {
+        id: "text-embedding-004",
+        label: "Gemini Embedding 004",
+        capabilities: ["embedding"],
+        pricing: { inputPer1MUsd: 0 },
       },
     ],
   },
@@ -168,6 +190,16 @@ export const PROVIDERS: ProviderInfo[] = [
 
 export function getProvider(id: string): ProviderInfo | undefined {
   return PROVIDERS.find((p) => p.id === id);
+}
+
+/** Providers whose chat + embeddings speak the OpenAI wire format. */
+export function isOpenAICompat(providerId: string): boolean {
+  return providerId === "openai" || providerId === "gemini";
+}
+
+/** OpenAI-compatible base URL for a provider (undefined = OpenAI default). */
+export function apiBaseFor(providerId: string): string | undefined {
+  return getProvider(providerId)?.apiBase;
 }
 
 export function getModel(providerId: string, modelId: string): ModelInfo | undefined {
