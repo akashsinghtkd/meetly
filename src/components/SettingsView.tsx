@@ -396,6 +396,16 @@ function ModelCard({
           </button>
         ))}
       </div>
+      {isTranscription &&
+        (() => {
+          const sel = models.find((m) => m.id === model);
+          return sel && !sel.diarizes ? (
+            <p className="mt-3 text-[12px] text-ink-faint">
+              This model transcribes but doesn't separate speakers. For automatic speaker
+              diarization, choose <span className="font-medium text-ink-light">Deepgram</span>.
+            </p>
+          ) : null;
+        })()}
     </Card>
   );
 }
