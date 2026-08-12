@@ -667,14 +667,18 @@ export const useStore = create<AppState>()(
           .filter((s) => s.confidence === "high" && s.name.trim())
           .map((s) => [s.label.trim(), s.name.trim()]),
       );
-      const currentSpeakers = get().meetings.find((m) => m.id === meetingId)?.speakers ?? meeting.speakers;
-      const renamedSpeakers = currentSpeakers.map((sp) =>
+      const latest = get().meetings.find((m) => m.id === meetingId);
+      const renamedSpeakers = (latest?.speakers ?? meeting.speakers).map((sp) =>
         GENERIC_SPEAKER.test(sp.displayName) && nameByLabel.has(sp.displayName)
           ? { ...sp, displayName: nameByLabel.get(sp.displayName)! }
           : sp,
       );
+      // Auto-title from the AI, but only when there's no calendar/user title yet.
+      const needsTitle = !latest?.title.trim() || latest.title === "Untitled meeting";
+      const titlePatch = result.title && needsTitle ? { title: result.title } : {};
 
       get().updateMeeting(meetingId, {
+        ...titlePatch,
         summary: result.summary,
         actionItems,
         speakers: renamedSpeakers,

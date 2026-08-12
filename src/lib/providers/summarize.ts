@@ -30,6 +30,8 @@ export interface SummaryResult {
   summary: Summary;
   actionItems: SummaryActionItem[];
   speakerNames: InferredSpeaker[];
+  /** A short AI-generated title, used when the meeting has no calendar title. */
+  title?: string;
   inputTokens?: number;
   outputTokens?: number;
   estimated: boolean;
@@ -106,6 +108,7 @@ Instructions:
 
 Return a JSON object with EXACTLY this shape:
 {
+  "title": "a short, specific 3-6 word title for this meeting",
   "summary": "2-4 sentence executive summary",
   "sections": [{"heading": "<one of the exact headings above>", "items": ["short bullet", ...]}],
   "speakerNames": [{"label": "Speaker 2", "name": "Sarah", "confidence": "high|medium|low"}],
@@ -117,6 +120,7 @@ function normalizeSummary(raw: any): {
   summary: Summary;
   actionItems: SummaryActionItem[];
   speakerNames: InferredSpeaker[];
+  title?: string;
 } {
   const arr = (v: any): string[] => (Array.isArray(v) ? v.filter((x) => typeof x === "string") : []);
   const sections = Array.isArray(raw?.sections)
@@ -157,7 +161,9 @@ function normalizeSummary(raw: any): {
           confidence: confidences.includes(s.confidence) ? s.confidence : "low",
         }))
     : [];
-  return { summary, actionItems, speakerNames };
+  const title =
+    typeof raw?.title === "string" && raw.title.trim() ? raw.title.trim().slice(0, 80) : undefined;
+  return { summary, actionItems, speakerNames, title };
 }
 
 // Works for any OpenAI-compatible chat provider (OpenAI, Gemini) — only the
@@ -191,11 +197,12 @@ class OpenAICompatSummarizer implements Summarizer {
       const match = out.content.match(/\{[\s\S]*\}/);
       if (match) parsed = JSON.parse(match[0]);
     }
-    const { summary, actionItems, speakerNames } = normalizeSummary(parsed);
+    const { summary, actionItems, speakerNames, title: aiTitle } = normalizeSummary(parsed);
     return {
       summary,
       actionItems,
       speakerNames,
+      title: aiTitle,
       inputTokens: out.inputTokens,
       outputTokens: out.outputTokens,
       estimated: false,
