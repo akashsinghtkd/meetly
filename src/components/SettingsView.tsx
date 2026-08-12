@@ -2,7 +2,7 @@ import { useEffect, useMemo, useState } from "react";
 import { Check, Coins, ExternalLink, Gauge, KeyRound, Mic, Cpu, Sparkles, Volume2, Wallet } from "lucide-react";
 import clsx from "clsx";
 import { useStore } from "../store/store";
-import { useSettings, PRESETS, type PresetId } from "../store/settingsStore";
+import { useSettings, PRESETS, pickChatModel, type PresetId } from "../store/settingsStore";
 import { useCost } from "../store/costStore";
 import { listAudioDevices, inTauri } from "../lib/tauri";
 import {
@@ -11,6 +11,7 @@ import {
   getModel,
   modelsFor,
   type Capability,
+  type ProviderInfo,
 } from "../lib/providers/catalog";
 import { formatUsd, formatTokens } from "../lib/money";
 import type { AudioDevice } from "../lib/types";
@@ -51,104 +52,98 @@ async function openExternal(url: string) {
   }
 }
 
+/** "an" for a vowel-initial label ("OpenAI"), "a" otherwise ("Google Gemini"). */
+function article(label: string): string {
+  return /^[aeiou]/i.test(label) ? "an" : "a";
+}
+
 /**
- * Pick and connect the AI provider that powers notes, chat, and semantic search.
- * OpenAI and Gemini both use the same OpenAI-compatible path, so switching is a
- * one-click choice + an API key. Works on web, macOS, and Windows.
+ * Dead-simple AI setup: pick a provider, paste one key. The specific model is
+ * chosen by the Quality preset below, so there are no per-model chips or pricing
+ * to wade through here. OpenAI and Gemini share the same OpenAI-compatible path,
+ * so switching is one click. Works on web, macOS, and Windows.
  */
 function AiProviderCard() {
   const chatProvider = useSettings((s) => s.chatProvider);
-  const chatModel = useSettings((s) => s.chatModel);
   const setChat = useSettings((s) => s.setChat);
   const apiKeys = useSettings((s) => s.apiKeys);
   const setApiKey = useSettings((s) => s.setApiKey);
+  const tier = useSettings((s) => s.activePreset()) ?? "balanced";
 
   const providers = PROVIDERS.filter(
     (p) => !p.comingSoon && p.requiresKey && p.models.some((m) => m.capabilities.includes("chat")),
   );
+  const active = providers.find((p) => p.id === chatProvider) ?? providers[0];
+  const activeHasKey = Boolean(apiKeys[active.id]?.trim());
+
+  const choose = (p: ProviderInfo) => {
+    const model = pickChatModel(p.id, tier) ?? modelsFor(p.id, "chat")[0]?.id;
+    if (model) setChat(p.id, model);
+  };
 
   return (
     <Card
       icon={<Cpu className="h-4 w-4" />}
       title="AI provider"
-      subtitle="Who powers your notes, chat, and search. Add a key, then click Use."
+      subtitle="Who powers your notes, chat, and search. Pick one and paste its key."
     >
-      <div className="space-y-3">
+      {/* Step 1 — pick a provider. */}
+      <div className="mb-4 grid grid-cols-2 gap-2">
         {providers.map((p) => {
-          const active = chatProvider === p.id;
-          const hasKey = Boolean(apiKeys[p.id]?.trim());
-          const chatModels = modelsFor(p.id, "chat");
+          const selected = active.id === p.id;
+          const connected = Boolean(apiKeys[p.id]?.trim());
           return (
-            <div
+            <button
               key={p.id}
+              onClick={() => choose(p)}
               className={clsx(
-                "rounded-lg border p-4 transition-colors",
-                active ? "border-accent bg-accent-soft/40" : "border-line",
+                "rounded-lg border p-3 text-left transition-colors",
+                selected ? "border-accent bg-accent-soft" : "border-line hover:bg-surface-hover",
               )}
             >
-              <div className="mb-2.5 flex items-center gap-2">
+              <div className="flex items-center gap-1.5">
                 <span className="font-semibold text-ink">{p.label}</span>
-                {active && (
-                  <span className="rounded bg-accent px-1.5 py-0.5 text-[10px] font-semibold uppercase tracking-wide text-white">
-                    Active
-                  </span>
-                )}
-                {hasKey ? (
-                  <span className="flex items-center gap-1 text-xs text-emerald-600">
-                    <Check className="h-3.5 w-3.5" /> Connected
+                {selected && <Check className="ml-auto h-4 w-4 text-accent" />}
+              </div>
+              <div className="mt-1 text-xs">
+                {connected ? (
+                  <span className="flex items-center gap-1 text-emerald-600">
+                    <Check className="h-3 w-3" /> Connected
                   </span>
                 ) : (
-                  <span className="text-xs text-ink-faint">No key yet</span>
+                  <span className="text-ink-faint">No key yet</span>
                 )}
               </div>
-              <input
-                type="password"
-                value={apiKeys[p.id] ?? ""}
-                onChange={(e) => setApiKey(p.id, e.target.value)}
-                placeholder={p.id === "openai" ? "sk-…" : "API key…"}
-                className="w-full rounded-md border border-line px-3 py-2 font-mono text-sm outline-none focus:border-accent"
-              />
-              {p.keyUrl && (
-                <button
-                  onClick={() => openExternal(p.keyUrl!)}
-                  className="mt-1.5 inline-flex items-center gap-1 text-[12px] text-ink-faint hover:text-accent"
-                >
-                  Get a {p.label} key <ExternalLink className="h-3 w-3" />
-                </button>
-              )}
-
-              {/* Click a model to select it and make this provider active. */}
-              <div className="mt-3 flex flex-wrap gap-1.5">
-                {chatModels.map((m) => {
-                  const selected = active && chatModel === m.id;
-                  return (
-                    <button
-                      key={m.id}
-                      onClick={() => setChat(p.id, m.id)}
-                      className={clsx(
-                        "flex items-center gap-1.5 rounded-md border px-2.5 py-1 text-xs",
-                        selected
-                          ? "border-accent bg-accent-soft text-ink"
-                          : "border-line text-ink-light hover:bg-surface-hover",
-                      )}
-                    >
-                      {selected && <Check className="h-3 w-3 text-accent" />}
-                      <span className="font-medium">{m.label}</span>
-                      {m.quality && (
-                        <span className="text-[9px] uppercase tracking-wide text-ink-faint">
-                          {m.quality}
-                        </span>
-                      )}
-                      <span className="tabular-nums text-ink-faint">
-                        {formatUsd(m.pricing.inputPer1MUsd ?? 0)}/{formatUsd(m.pricing.outputPer1MUsd ?? 0)}·1M
-                      </span>
-                    </button>
-                  );
-                })}
-              </div>
-            </div>
+            </button>
           );
         })}
+      </div>
+
+      {/* Step 2 — paste the key for whichever is selected. */}
+      <label className="mb-1.5 block text-[13px] font-medium text-ink-light">
+        {active.label} API key
+      </label>
+      <input
+        type="password"
+        value={apiKeys[active.id] ?? ""}
+        onChange={(e) => setApiKey(active.id, e.target.value)}
+        placeholder={active.id === "openai" ? "sk-…" : "API key…"}
+        className="w-full rounded-md border border-line px-3 py-2 font-mono text-sm outline-none focus:border-accent"
+      />
+      <div className="mt-2 flex items-center justify-between gap-3">
+        {active.keyUrl ? (
+          <button
+            onClick={() => openExternal(active.keyUrl!)}
+            className="inline-flex items-center gap-1 text-[12px] text-ink-faint hover:text-accent"
+          >
+            Get {article(active.label)} {active.label} key <ExternalLink className="h-3 w-3" />
+          </button>
+        ) : (
+          <span />
+        )}
+        {!activeHasKey && (
+          <span className="text-[12px] text-ink-faint">Needed to turn on real AI.</span>
+        )}
       </div>
     </Card>
   );
@@ -196,7 +191,7 @@ function PresetCard() {
   const active = useSettings((s) => s.activePreset());
 
   return (
-    <Card icon={<Gauge className="h-4 w-4" />} title="Quality & cost preset" subtitle="Pick a balance of quality and price — this sets the models below.">
+    <Card icon={<Gauge className="h-4 w-4" />} title="Quality & cost" subtitle="Pick a balance of quality and price — this chooses the AI + transcription models for you.">
       <div className="grid grid-cols-3 gap-2">
         {PRESETS.map((p) => {
           const perHr = estPerHour(p.transcriptionProvider, p.transcriptionModel);
