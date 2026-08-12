@@ -144,3 +144,37 @@ export async function semanticSearch(
     .sort((a, b) => b.score - a.score)
     .slice(0, k);
 }
+
+export interface Passage {
+  meetingId: string;
+  title: string;
+  text: string;
+  score: number;
+}
+
+/**
+ * Top-k passages across all meetings (fuller text than {@link semanticSearch},
+ * and NOT deduped per meeting) — the retrieval half of "ask across meetings".
+ */
+export async function retrievePassages(
+  query: string,
+  meetings: Meeting[],
+  k = 8,
+): Promise<Passage[]> {
+  if (!query.trim()) return [];
+  const embedder = getEmbedder();
+  await ensureIndex(meetings, embedder);
+  const [qv] = await embedder.embed([query.trim()]);
+  const titleById = new Map(meetings.map((m) => [m.id, m.title]));
+
+  const all: Passage[] = [];
+  for (const [meetingId, indexed] of cache) {
+    for (const c of indexed.chunks) {
+      const score = cosine(qv, c.vec);
+      if (score > 0.001) {
+        all.push({ meetingId, title: titleById.get(meetingId) || "Untitled meeting", text: c.text, score });
+      }
+    }
+  }
+  return all.sort((a, b) => b.score - a.score).slice(0, k);
+}

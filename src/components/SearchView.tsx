@@ -6,6 +6,7 @@ import { useStore } from "../store/store";
 import { relativeDate } from "../lib/format";
 import { semanticSearch, type SemanticHit } from "../lib/semanticSearch";
 import { usingRealEmbeddings } from "../lib/providers/embeddings";
+import { askAcrossMeetings, canAnswer, type MeetingAnswer } from "../lib/askMeetings";
 
 interface Hit {
   meetingId: string;
@@ -76,6 +77,24 @@ export function SearchView() {
     return () => clearTimeout(timer);
   }, [q, mode, meetings]);
 
+  // Ask across meetings (RAG): retrieve passages + generate a cited answer.
+  const [answer, setAnswer] = useState<MeetingAnswer | null>(null);
+  const [answering, setAnswering] = useState(false);
+  useEffect(() => {
+    setAnswer(null);
+  }, [q, mode]);
+  const runAnswer = async () => {
+    setAnswering(true);
+    setAnswer(null);
+    try {
+      setAnswer(await askAcrossMeetings(q.trim(), meetings));
+    } catch (e) {
+      setAnswer({ answer: `Couldn't generate an answer: ${String(e)}`, sources: [], answered: true });
+    } finally {
+      setAnswering(false);
+    }
+  };
+
   const results: Hit[] = mode === "semantic" ? semHits : keywordHits;
   const hint =
     mode === "semantic"
@@ -122,6 +141,46 @@ export function SearchView() {
         </div>
       </div>
       <p className="text-[11px] text-ink-faint mt-2">{hint}</p>
+
+      {mode === "semantic" && q.trim() && canAnswer() && (
+        <div className="mt-4">
+          {!answer && !answering && (
+            <button
+              onClick={runAnswer}
+              className="inline-flex items-center gap-1.5 rounded-md border border-line px-3 py-1.5 text-sm text-ink-light hover:bg-surface-hover"
+            >
+              <Sparkles className="h-4 w-4 text-accent" /> Answer this from your meetings
+            </button>
+          )}
+          {answering && (
+            <div className="flex items-center gap-2 text-sm text-ink-faint">
+              <Loader2 className="h-4 w-4 animate-spin" /> Reading your meetings…
+            </div>
+          )}
+          {answer?.answered && (
+            <div className="rounded-xl border border-line bg-surface-sidebar/50 p-4">
+              <div className="mb-2 flex items-center gap-1.5 text-[12px] font-semibold uppercase tracking-wide text-accent">
+                <Sparkles className="h-3.5 w-3.5" /> Answer
+              </div>
+              <div className="whitespace-pre-wrap text-[15px] leading-relaxed text-ink">{answer.answer}</div>
+              {answer.sources.length > 0 && (
+                <div className="mt-3 flex flex-wrap items-center gap-1.5">
+                  <span className="text-xs text-ink-faint">Sources:</span>
+                  {answer.sources.map((s) => (
+                    <button
+                      key={s.meetingId}
+                      onClick={() => openMeeting(s.meetingId)}
+                      className="rounded-md bg-surface-active px-2 py-0.5 text-xs text-ink-light hover:bg-surface-hover hover:text-ink"
+                    >
+                      {s.title || "Untitled meeting"}
+                    </button>
+                  ))}
+                </div>
+              )}
+            </div>
+          )}
+        </div>
+      )}
 
       <div className="mt-6 space-y-1">
         {results.map((h, i) => (
