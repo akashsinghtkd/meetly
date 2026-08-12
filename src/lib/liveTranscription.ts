@@ -61,8 +61,9 @@ async function handleChunk(meetingId: string, transcriber: Transcriber, ctx: Chu
       estimated: out.estimated,
     });
   } catch (e) {
+    // A single bad/short chunk shouldn't alarm the user or block the meeting —
+    // the transcript still builds from the other chunks. Log and move on.
     console.error("[live] chunk transcription failed:", e);
-    useStore.getState().setMeetingError(meetingId, String(e));
   }
 }
 

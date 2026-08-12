@@ -33,6 +33,9 @@ type WavWriter = hound::WavWriter<BufWriter<File>>;
 pub struct Sink {
     pub chunk: Option<WavWriter>,
     pub full: Option<WavWriter>,
+    /// Samples written to the current chunk — used to skip empty chunks (an empty
+    /// WAV is rejected by transcription APIs as "corrupted or unsupported").
+    pub chunk_samples: usize,
 }
 pub type SharedSink = Arc<Mutex<Sink>>;
 
@@ -299,7 +302,10 @@ fn start_track(
         let sink: SharedSink = Arc::new(Mutex::new(Sink {
             chunk: Some(chunk_writer),
             full: Some(full_writer),
+            chunk_samples: 0,
         }));
+        // Don't send a chunk to transcription unless it has real audio (~0.2s+).
+        let min_samples = spec.sample_rate as usize * spec.channels as usize / 5;
 
         // Bound to a local so capture stays alive until this thread ends.
         let _live = match capture {
@@ -348,17 +354,20 @@ fn start_track(
             let elapsed = chunk_start.elapsed().as_secs_f64();
 
             if stopping {
-                let old = {
+                let (old, samples) = {
                     let mut s = sink.lock().unwrap();
                     let old = s.chunk.take();
+                    let samples = s.chunk_samples;
                     if let Some(f) = s.full.take() {
                         let _ = f.finalize();
                     }
-                    old
+                    (old, samples)
                 };
                 if let Some(o) = old {
                     let _ = o.finalize();
-                    emit(index, &chunk_path, elapsed);
+                    if samples >= min_samples {
+                        emit(index, &chunk_path, elapsed);
+                    }
                 }
                 if !got_audio_thread.load(Ordering::Relaxed) && channel == "system" {
                     eprintln!("[audio] the system-audio track received no samples");
@@ -370,15 +379,19 @@ fn start_track(
                 let next_path = dir.join(format!("{meeting_id}-{channel}-{:04}.wav", index + 1));
                 match new_wav(&next_path, spec) {
                     Ok(w) => {
-                        let old = {
+                        let (old, samples) = {
                             let mut s = sink.lock().unwrap();
                             let old = s.chunk.take();
+                            let samples = s.chunk_samples;
                             s.chunk = Some(w);
-                            old
+                            s.chunk_samples = 0;
+                            (old, samples)
                         };
                         if let Some(o) = old {
                             let _ = o.finalize();
-                            emit(index, &chunk_path, elapsed);
+                            if samples >= min_samples {
+                                emit(index, &chunk_path, elapsed);
+                            }
                         }
                         index += 1;
                         chunk_path = next_path;
@@ -409,15 +422,19 @@ fn build_stream(
     let err_fn = |e| eprintln!("[audio] stream error: {e}");
 
     fn write_all(sink: &SharedSink, samples: impl Iterator<Item = i16>) {
-        let mut s = sink.lock().unwrap();
+        let mut guard = sink.lock().unwrap();
+        let s = &mut *guard; // reborrow for disjoint field access
+        let mut written = 0usize;
         for v in samples {
             if let Some(w) = s.chunk.as_mut() {
                 let _ = w.write_sample(v);
+                written += 1;
             }
             if let Some(w) = s.full.as_mut() {
                 let _ = w.write_sample(v);
             }
         }
+        s.chunk_samples += written;
     }
 
     let stream = match format {
