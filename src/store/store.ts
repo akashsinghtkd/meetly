@@ -8,6 +8,7 @@ import { defaultSystemDevice, startRecording, stopRecording } from "../lib/tauri
 import { currentEvent } from "../lib/calendar";
 import { useCalendar } from "./calendarStore";
 import { startLiveSession, stopLiveSession } from "../lib/liveTranscription";
+import { startLiveNaming, stopLiveNaming } from "../lib/liveNaming";
 import { getSummarizer } from "../lib/providers/summarize";
 import { enhanceNotes } from "../lib/providers/notes";
 import { canDiarize, diarizeFile } from "../lib/providers/diarize";
@@ -419,6 +420,8 @@ export const useStore = create<AppState>()(
     }
     // Begin live transcription (real chunk events in the app; mock timer in browser).
     startLiveSession(meeting.id);
+    // Progressively name the remote party while the call runs.
+    startLiveNaming(meeting.id);
     // Enrich from the calendar in the background so recording stays instant:
     // borrow the current event's title and attendee roster (the roster gives
     // speaker-naming a real head start instead of guessing from scratch).
@@ -444,6 +447,16 @@ export const useStore = create<AppState>()(
       }
       if (ev.attendeeEmails.length) patch.attendeeEmails = ev.attendeeEmails;
       if (Object.keys(patch).length) get().updateMeeting(meetingId, patch);
+      // 1:1 call → we already know the remote party from the invite; name them
+      // now (only if still the generic "Them"), so it shows live.
+      if (ev.attendees.length === 1) {
+        const them = get()
+          .meetings.find((x) => x.id === meetingId)
+          ?.speakers.find((s) => s.id === "them");
+        if (them && GENERIC_SPEAKER.test(them.displayName)) {
+          get().renameSpeaker(meetingId, "them", ev.attendees[0]);
+        }
+      }
     } catch (e) {
       console.error("[calendar] enrich failed:", e);
     }
@@ -462,6 +475,7 @@ export const useStore = create<AppState>()(
     // Keep the transcription listener alive briefly so the final chunk(s)
     // emitted during stop are still captured, then tear it down and generate notes.
     setTimeout(() => stopLiveSession(), 1500);
+    stopLiveNaming();
     set((s) => ({
       recording: { active: false, meetingId: null, startedAt: null, elapsedSecs: 0, systemActive: false },
       meetings: s.meetings.map((m) =>

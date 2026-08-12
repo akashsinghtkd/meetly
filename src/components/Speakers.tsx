@@ -4,28 +4,40 @@ import { useStore } from "../store/store";
 import type { Meeting, TranscriptSegment } from "../lib/types";
 
 /** Editable speaker chips + add + heuristic auto-split. */
+const GENERIC_SPEAKER = /^(me|them|speaker \d+|speaker [a-z])$/i;
+
 export function SpeakersBar({ meeting }: { meeting: Meeting }) {
   const rename = useStore((s) => s.renameSpeaker);
   const add = useStore((s) => s.addSpeaker);
   const diarize = useStore((s) => s.diarizeSpeakers);
   const hasRemote = meeting.transcript.some((s) => s.channel === "system");
+  const recording = meeting.status === "recording";
 
   return (
     <div className="flex flex-wrap items-center gap-2">
-      {meeting.speakers.map((sp) => (
-        <span
-          key={sp.id}
-          className="inline-flex items-center gap-1.5 rounded-md border border-line px-2 py-1"
-        >
-          <span className="h-2.5 w-2.5 rounded-full shrink-0" style={{ background: sp.color }} />
-          <input
-            value={sp.displayName}
-            onChange={(e) => rename(meeting.id, sp.id, e.target.value)}
-            className="bg-transparent outline-none text-sm w-24"
-            spellCheck={false}
-          />
-        </span>
-      ))}
+      {meeting.speakers.map((sp) => {
+        // While recording, a still-generic remote speaker is being figured out.
+        const learning = recording && sp.id !== "me" && GENERIC_SPEAKER.test(sp.displayName);
+        return (
+          <span
+            key={sp.id}
+            className="inline-flex items-center gap-1.5 rounded-md border border-line px-2 py-1"
+          >
+            <span className="h-2.5 w-2.5 rounded-full shrink-0" style={{ background: sp.color }} />
+            <input
+              value={sp.displayName}
+              onChange={(e) => rename(meeting.id, sp.id, e.target.value)}
+              className="bg-transparent outline-none text-sm w-24"
+              spellCheck={false}
+            />
+            {learning && (
+              <span className="text-[10px] italic text-ink-faint animate-pulse whitespace-nowrap">
+                learning…
+              </span>
+            )}
+          </span>
+        );
+      })}
 
       <button
         onClick={() => add(meeting.id)}
