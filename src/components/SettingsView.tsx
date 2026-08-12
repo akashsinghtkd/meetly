@@ -2,7 +2,13 @@ import { useEffect, useMemo, useState } from "react";
 import { Check, ChevronRight, Coins, ExternalLink, Gauge, KeyRound, Mic, Cpu, Sparkles, Volume2, Wallet } from "lucide-react";
 import clsx from "clsx";
 import { useStore } from "../store/store";
-import { useSettings, PRESETS, pickChatModel, type PresetId } from "../store/settingsStore";
+import {
+  useSettings,
+  PRESETS,
+  pickChatModel,
+  pickTranscriptionModel,
+  type PresetId,
+} from "../store/settingsStore";
 import { useCost } from "../store/costStore";
 import { listAudioDevices, inTauri } from "../lib/tauri";
 import {
@@ -92,6 +98,7 @@ function article(label: string): string {
 function AiProviderCard() {
   const chatProvider = useSettings((s) => s.chatProvider);
   const setChat = useSettings((s) => s.setChat);
+  const setTranscription = useSettings((s) => s.setTranscription);
   const apiKeys = useSettings((s) => s.apiKeys);
   const setApiKey = useSettings((s) => s.setApiKey);
   const tier = useSettings((s) => s.activePreset()) ?? "balanced";
@@ -102,9 +109,13 @@ function AiProviderCard() {
   const active = providers.find((p) => p.id === chatProvider) ?? providers[0];
   const activeHasKey = Boolean(apiKeys[active.id]?.trim());
 
+  // Picking a provider points BOTH notes/chat and (if supported) transcription
+  // at it, so one key can power everything — the model tier follows the preset.
   const choose = (p: ProviderInfo) => {
-    const model = pickChatModel(p.id, tier) ?? modelsFor(p.id, "chat")[0]?.id;
-    if (model) setChat(p.id, model);
+    const chat = pickChatModel(p.id, tier) ?? modelsFor(p.id, "chat")[0]?.id;
+    if (chat) setChat(p.id, chat);
+    const trans = pickTranscriptionModel(p.id, tier) ?? modelsFor(p.id, "transcription")[0]?.id;
+    if (trans) setTranscription(p.id, trans);
   };
 
   return (
@@ -215,12 +226,16 @@ function estPerHour(tProvider: string, tModel: string): number {
 function PresetCard() {
   const applyPreset = useSettings((s) => s.applyPreset);
   const active = useSettings((s) => s.activePreset());
+  const transcriptionProvider = useSettings((s) => s.transcriptionProvider);
 
   return (
     <Card icon={<Gauge className="h-4 w-4" />} title="Quality & cost" subtitle="Pick a balance of quality and price — this chooses the AI + transcription models for you.">
       <div className="grid grid-cols-3 gap-2">
         {PRESETS.map((p) => {
-          const perHr = estPerHour(p.transcriptionProvider, p.transcriptionModel);
+          const perHr = estPerHour(
+            transcriptionProvider,
+            pickTranscriptionModel(transcriptionProvider, p.id) ?? "",
+          );
           return (
             <button
               key={p.id}

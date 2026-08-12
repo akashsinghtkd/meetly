@@ -146,8 +146,9 @@ export const PROVIDERS: ProviderInfo[] = [
       {
         id: "gemini-2.5-flash",
         label: "Gemini 2.5 Flash",
-        capabilities: ["chat"],
-        pricing: { inputPer1MUsd: 0.3, outputPer1MUsd: 2.5 },
+        capabilities: ["transcription", "chat"],
+        // Transcription is billed as audio input tokens; ~$0.001/min is an estimate.
+        pricing: { perAudioMinuteUsd: 0.001, inputPer1MUsd: 0.3, outputPer1MUsd: 2.5 },
         quality: "great",
       },
       {

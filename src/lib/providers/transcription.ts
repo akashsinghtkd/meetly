@@ -45,7 +45,7 @@ class RustTranscriber implements Transcriber {
     public providerId: string,
     public modelId: string,
     private apiKey: string,
-    private command: "transcribe_file" | "transcribe_deepgram",
+    private command: "transcribe_file" | "transcribe_deepgram" | "transcribe_gemini",
   ) {}
 
   async transcribeChunk(path: string | null, ctx: ChunkContext): Promise<TranscriptionOutput> {
@@ -116,6 +116,9 @@ export function getTranscriber(): Transcriber {
     }
     if (transcriptionProvider === "deepgram") {
       return new RustTranscriber("deepgram", transcriptionModel, key, "transcribe_deepgram");
+    }
+    if (transcriptionProvider === "gemini") {
+      return new RustTranscriber("gemini", transcriptionModel, key, "transcribe_gemini");
     }
   }
   // Unwired provider or no key → mock.

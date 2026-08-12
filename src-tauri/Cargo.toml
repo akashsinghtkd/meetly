@@ -30,6 +30,7 @@ rusqlite = { version = "0.32", features = ["bundled"] }
 # Audio capture
 cpal = "0.15"
 hound = "3.5"           # WAV encoding
+base64 = "0.22"         # inline audio for Gemini transcription
 chrono = { version = "0.4", features = ["serde"] }
 
 # HTTP (transcription API calls happen in Rust to avoid CORS + keep keys native)

@@ -66,6 +66,7 @@ pub fn run() {
             default_system_device,
             transcribe::transcribe_file,
             transcribe::transcribe_deepgram,
+            transcribe::transcribe_gemini,
             transcribe::diarize_deepgram,
             chat::chat_completion,
             embeddings::embed_texts,

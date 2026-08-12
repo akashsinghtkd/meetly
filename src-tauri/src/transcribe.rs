@@ -122,6 +122,109 @@ pub async fn transcribe_file(
     })
 }
 
+// ── Google Gemini (multimodal generateContent — plain-text transcript) ───────
+//
+// Gemini has no Whisper-style endpoint; it transcribes audio through the
+// multimodal generateContent call and returns plain text (no timestamps), so
+// the frontend treats each chunk as one segment, exactly like gpt-4o-transcribe.
+
+#[derive(Debug, Deserialize)]
+struct GemResp {
+    #[serde(default)]
+    candidates: Vec<GemCandidate>,
+    #[serde(default, rename = "usageMetadata")]
+    usage: Option<GemUsage>,
+}
+#[derive(Debug, Deserialize)]
+struct GemCandidate {
+    #[serde(default)]
+    content: Option<GemContent>,
+}
+#[derive(Debug, Deserialize)]
+struct GemContent {
+    #[serde(default)]
+    parts: Vec<GemPart>,
+}
+#[derive(Debug, Deserialize)]
+struct GemPart {
+    #[serde(default)]
+    text: String,
+}
+#[derive(Debug, Deserialize)]
+struct GemUsage {
+    #[serde(default, rename = "promptTokenCount")]
+    prompt_token_count: Option<u32>,
+    #[serde(default, rename = "candidatesTokenCount")]
+    candidates_token_count: Option<u32>,
+}
+
+#[tauri::command]
+pub async fn transcribe_gemini(
+    path: String,
+    model: String,
+    api_key: String,
+) -> Result<TranscribeResult, String> {
+    use base64::Engine;
+    if api_key.trim().is_empty() {
+        return Err("missing API key".into());
+    }
+    let bytes = std::fs::read(&path).map_err(|e| format!("read {path}: {e}"))?;
+    let audio_b64 = base64::engine::general_purpose::STANDARD.encode(&bytes);
+
+    let body = serde_json::json!({
+        "contents": [{
+            "parts": [
+                { "text": "Transcribe the spoken audio verbatim. Output only the transcript text — no timestamps, no speaker labels, no commentary. If there is no speech, output nothing." },
+                { "inline_data": { "mime_type": "audio/wav", "data": audio_b64 } }
+            ]
+        }],
+        "generationConfig": { "temperature": 0 }
+    });
+
+    let url =
+        format!("https://generativelanguage.googleapis.com/v1beta/models/{model}:generateContent");
+    let client = reqwest::Client::new();
+    let resp = client
+        .post(url)
+        .header("x-goog-api-key", api_key)
+        .json(&body)
+        .send()
+        .await
+        .map_err(|e| format!("request failed: {e}"))?;
+
+    let status = resp.status();
+    let raw = resp.text().await.map_err(|e| e.to_string())?;
+    if !status.is_success() {
+        return Err(format!("Gemini {status}: {raw}"));
+    }
+
+    let parsed: GemResp =
+        serde_json::from_str(&raw).map_err(|e| format!("parse error: {e}; body: {raw}"))?;
+
+    let text = parsed
+        .candidates
+        .into_iter()
+        .next()
+        .and_then(|c| c.content)
+        .map(|c| c.parts.into_iter().map(|p| p.text).collect::<String>())
+        .unwrap_or_default()
+        .trim()
+        .to_string();
+
+    let (input_tokens, output_tokens) = match parsed.usage {
+        Some(u) => (u.prompt_token_count, u.candidates_token_count),
+        None => (None, None),
+    };
+
+    // Plain text → the frontend maps the whole chunk to one segment.
+    Ok(TranscribeResult {
+        text,
+        segments: vec![],
+        input_tokens,
+        output_tokens,
+    })
+}
+
 // ── Deepgram (cheaper, high quality, native diarization) ────────────────────
 
 #[derive(Debug, Deserialize)]

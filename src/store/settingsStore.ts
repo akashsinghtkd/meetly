@@ -12,39 +12,20 @@ export interface Preset {
   id: PresetId;
   label: string;
   blurb: string;
-  transcriptionProvider: string;
-  transcriptionModel: string;
 }
 
-// Quality/cost presets. The transcription model is fixed per tier; the chat
-// model is resolved *within whichever AI provider is active* (OpenAI or Gemini),
-// so a preset respects your provider choice instead of overriding it.
+// Quality/cost presets. Both the chat and transcription models are resolved
+// *within whichever providers are active* (OpenAI, Gemini, Deepgram), so a
+// preset tunes quality/cost without overriding your provider choice.
 export const PRESETS: Preset[] = [
-  {
-    id: "best",
-    label: "Best quality",
-    blurb: "Top accuracy. Best transcription + strongest notes model.",
-    transcriptionProvider: "openai",
-    transcriptionModel: "gpt-4o-transcribe",
-  },
-  {
-    id: "balanced",
-    label: "Balanced",
-    blurb: "Great quality at a fraction of the cost. Recommended.",
-    transcriptionProvider: "openai",
-    transcriptionModel: "gpt-4o-transcribe",
-  },
-  {
-    id: "cheapest",
-    label: "Cheapest",
-    blurb: "Lowest cost, still very good for meetings.",
-    transcriptionProvider: "openai",
-    transcriptionModel: "gpt-4o-mini-transcribe",
-  },
+  { id: "best", label: "Best quality", blurb: "Top accuracy. Best transcription + strongest notes model." },
+  { id: "balanced", label: "Balanced", blurb: "Great quality at a fraction of the cost. Recommended." },
+  { id: "cheapest", label: "Cheapest", blurb: "Lowest cost, still very good for meetings." },
 ];
 
 const chatModelCost = (m: ModelInfo) =>
   (m.pricing.inputPer1MUsd ?? 0) + (m.pricing.outputPer1MUsd ?? 0);
+const QUALITY_ORDER: Record<string, number> = { best: 0, great: 1, good: 2 };
 
 /** The chat model matching a quality/cost tier within a provider. */
 export function pickChatModel(providerId: string, tier: PresetId): string | undefined {
@@ -52,6 +33,21 @@ export function pickChatModel(providerId: string, tier: PresetId): string | unde
   if (byCost.length === 0) return undefined;
   // "best" = the priciest (most capable); balanced/cheapest = the cheapest.
   return tier === "best" ? byCost[byCost.length - 1].id : byCost[0].id;
+}
+
+/** The transcription model matching a tier within a provider. */
+export function pickTranscriptionModel(providerId: string, tier: PresetId): string | undefined {
+  const models = modelsFor(providerId, "transcription");
+  if (models.length === 0) return undefined;
+  if (tier === "cheapest") {
+    return [...models].sort(
+      (a, b) => (a.pricing.perAudioMinuteUsd ?? 0) - (b.pricing.perAudioMinuteUsd ?? 0),
+    )[0].id;
+  }
+  // best & balanced → the highest-quality transcription model.
+  return [...models].sort(
+    (a, b) => (QUALITY_ORDER[a.quality ?? "good"] ?? 3) - (QUALITY_ORDER[b.quality ?? "good"] ?? 3),
+  )[0].id;
 }
 
 interface SettingsState {
@@ -96,14 +92,11 @@ export const useSettings = create<SettingsState>()(
       setHardCap: (on) => set({ hardCap: on }),
 
       applyPreset: (id) => {
-        const p = PRESETS.find((x) => x.id === id);
-        if (!p) return;
-        // Keep the active chat provider; pick its model for this tier.
-        const chatModel = pickChatModel(get().chatProvider, id) ?? get().chatModel;
+        // Keep the active providers; pick each one's model for this tier.
+        const s = get();
         set({
-          transcriptionProvider: p.transcriptionProvider,
-          transcriptionModel: p.transcriptionModel,
-          chatModel,
+          chatModel: pickChatModel(s.chatProvider, id) ?? s.chatModel,
+          transcriptionModel: pickTranscriptionModel(s.transcriptionProvider, id) ?? s.transcriptionModel,
         });
       },
 
@@ -113,9 +106,8 @@ export const useSettings = create<SettingsState>()(
         const s = get();
         const match = PRESETS.find(
           (p) =>
-            p.transcriptionProvider === s.transcriptionProvider &&
-            p.transcriptionModel === s.transcriptionModel &&
-            pickChatModel(s.chatProvider, p.id) === s.chatModel,
+            pickChatModel(s.chatProvider, p.id) === s.chatModel &&
+            pickTranscriptionModel(s.transcriptionProvider, p.id) === s.transcriptionModel,
         );
         return match?.id ?? null;
       },
