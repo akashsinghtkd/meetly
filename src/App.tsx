@@ -28,7 +28,7 @@ import { useTeamspace } from "./store/teamspaceStore";
 import { useBilling } from "./store/billingStore";
 import { usePlatformAdmin } from "./store/platformAdminStore";
 import { cloudEnabled } from "./lib/supabase";
-import { inTauri } from "./lib/tauri";
+import { inTauri, listAudioDevices } from "./lib/tauri";
 import { clearWorkspace, startSync, stopSync } from "./lib/sync";
 import { useCalendar } from "./store/calendarStore";
 
@@ -160,6 +160,25 @@ export default function App() {
     return () => {
       unlisteners.forEach((u) => u());
     };
+  }, []);
+
+  // Desktop: make sure system audio ("Them") points at a loopback/system-tap
+  // device — never the microphone, which would record your own voice as the
+  // other participants. Fixes an unset or mis-set (== mic) system device.
+  useEffect(() => {
+    if (!inTauri()) return;
+    (async () => {
+      try {
+        const devices = await listAudioDevices();
+        const loopback = devices.find((d) => d.is_loopback || d.likely_system_audio)?.name ?? null;
+        if (!loopback) return;
+        const st = useStore.getState();
+        const sys = st.systemDevice;
+        if (!sys || sys === st.micDevice) st.setDevices(st.micDevice, loopback);
+      } catch {
+        /* device enumeration failed — leave settings as-is */
+      }
+    })();
   }, []);
 
   // Desktop: load calendar events at startup and whenever access is granted.

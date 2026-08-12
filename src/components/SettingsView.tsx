@@ -1,5 +1,5 @@
 import { useEffect, useMemo, useState } from "react";
-import { Check, Coins, ExternalLink, Gauge, KeyRound, Mic, Cpu, Sparkles, Volume2, Wallet } from "lucide-react";
+import { Check, ChevronRight, Coins, ExternalLink, Gauge, KeyRound, Mic, Cpu, Sparkles, Volume2, Wallet } from "lucide-react";
 import clsx from "clsx";
 import { useStore } from "../store/store";
 import { useSettings, PRESETS, pickChatModel, type PresetId } from "../store/settingsStore";
@@ -31,10 +31,36 @@ export function SettingsView() {
       <AiProviderCard />
       <PresetCard />
       <BudgetCard />
-      <ModelCard capability="transcription" title="Transcription" subtitle="Turns meeting audio into text (billed per minute)." />
-      <ApiKeysCard />
-      <AudioDevicesCard />
+      <AdvancedSettings />
       <UsageCard />
+    </div>
+  );
+}
+
+/** Everything most people never need to touch — collapsed by default. */
+function AdvancedSettings() {
+  const [open, setOpen] = useState(false);
+  return (
+    <div className="mb-6">
+      <button
+        onClick={() => setOpen((o) => !o)}
+        className="mb-3 flex w-full items-center gap-1.5 text-sm font-semibold text-ink-light hover:text-ink"
+      >
+        <ChevronRight className={clsx("h-4 w-4 transition-transform", open && "rotate-90")} />
+        Advanced settings
+        <span className="text-xs font-normal text-ink-faint">Transcription &amp; audio input</span>
+      </button>
+      {open && (
+        <>
+          <ModelCard
+            capability="transcription"
+            title="Transcription"
+            subtitle="Turns meeting audio into text (billed per minute)."
+          />
+          <ApiKeysCard />
+          <AudioDevicesCard />
+        </>
+      )}
     </div>
   );
 }
