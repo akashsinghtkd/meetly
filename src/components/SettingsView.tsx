@@ -31,7 +31,6 @@ export function SettingsView() {
       <PresetCard />
       <BudgetCard />
       <ModelCard capability="transcription" title="Transcription" subtitle="Turns meeting audio into text (billed per minute)." />
-      <ModelCard capability="chat" title="AI notes & chat" subtitle="Summaries, action items, and Ask AI (billed per token)." />
       <ApiKeysCard />
       <AudioDevicesCard />
       <UsageCard />
@@ -59,6 +58,7 @@ async function openExternal(url: string) {
  */
 function AiProviderCard() {
   const chatProvider = useSettings((s) => s.chatProvider);
+  const chatModel = useSettings((s) => s.chatModel);
   const setChat = useSettings((s) => s.setChat);
   const apiKeys = useSettings((s) => s.apiKeys);
   const setApiKey = useSettings((s) => s.setApiKey);
@@ -100,24 +100,6 @@ function AiProviderCard() {
                 ) : (
                   <span className="text-xs text-ink-faint">No key yet</span>
                 )}
-                {!active && (
-                  <button
-                    onClick={() => {
-                      const m = chatModels[0];
-                      if (m) setChat(p.id, m.id);
-                    }}
-                    disabled={!hasKey}
-                    title={hasKey ? `Use ${p.label} for AI` : "Add a key first"}
-                    className={clsx(
-                      "ml-auto rounded-md px-3 py-1 text-sm font-medium",
-                      hasKey
-                        ? "bg-accent text-white hover:bg-accent-hover"
-                        : "cursor-not-allowed bg-surface-active text-ink-faint",
-                    )}
-                  >
-                    Use
-                  </button>
-                )}
               </div>
               <input
                 type="password"
@@ -134,6 +116,36 @@ function AiProviderCard() {
                   Get a {p.label} key <ExternalLink className="h-3 w-3" />
                 </button>
               )}
+
+              {/* Click a model to select it and make this provider active. */}
+              <div className="mt-3 flex flex-wrap gap-1.5">
+                {chatModels.map((m) => {
+                  const selected = active && chatModel === m.id;
+                  return (
+                    <button
+                      key={m.id}
+                      onClick={() => setChat(p.id, m.id)}
+                      className={clsx(
+                        "flex items-center gap-1.5 rounded-md border px-2.5 py-1 text-xs",
+                        selected
+                          ? "border-accent bg-accent-soft text-ink"
+                          : "border-line text-ink-light hover:bg-surface-hover",
+                      )}
+                    >
+                      {selected && <Check className="h-3 w-3 text-accent" />}
+                      <span className="font-medium">{m.label}</span>
+                      {m.quality && (
+                        <span className="text-[9px] uppercase tracking-wide text-ink-faint">
+                          {m.quality}
+                        </span>
+                      )}
+                      <span className="tabular-nums text-ink-faint">
+                        {formatUsd(m.pricing.inputPer1MUsd ?? 0)}/{formatUsd(m.pricing.outputPer1MUsd ?? 0)}·1M
+                      </span>
+                    </button>
+                  );
+                })}
+              </div>
             </div>
           );
         })}

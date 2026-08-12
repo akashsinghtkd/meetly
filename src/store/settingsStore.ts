@@ -1,5 +1,6 @@
 import { create } from "zustand";
 import { persist } from "zustand/middleware";
+import { modelsFor, type ModelInfo } from "../lib/providers/catalog";
 
 // Persisted user settings. Transcription and chat pick their provider+model
 // independently, so you can use the best value API for each. API keys live in
@@ -13,12 +14,11 @@ export interface Preset {
   blurb: string;
   transcriptionProvider: string;
   transcriptionModel: string;
-  chatProvider: string;
-  chatModel: string;
 }
 
-// Quality/cost presets. Defaults keep the user's existing OpenAI key working;
-// Deepgram is offered as the cheaper "best value" transcription upgrade.
+// Quality/cost presets. The transcription model is fixed per tier; the chat
+// model is resolved *within whichever AI provider is active* (OpenAI or Gemini),
+// so a preset respects your provider choice instead of overriding it.
 export const PRESETS: Preset[] = [
   {
     id: "best",
@@ -26,8 +26,6 @@ export const PRESETS: Preset[] = [
     blurb: "Top accuracy. Best transcription + strongest notes model.",
     transcriptionProvider: "openai",
     transcriptionModel: "gpt-4o-transcribe",
-    chatProvider: "openai",
-    chatModel: "gpt-4o",
   },
   {
     id: "balanced",
@@ -35,8 +33,6 @@ export const PRESETS: Preset[] = [
     blurb: "Great quality at a fraction of the cost. Recommended.",
     transcriptionProvider: "openai",
     transcriptionModel: "gpt-4o-transcribe",
-    chatProvider: "openai",
-    chatModel: "gpt-4o-mini",
   },
   {
     id: "cheapest",
@@ -44,10 +40,19 @@ export const PRESETS: Preset[] = [
     blurb: "Lowest cost, still very good for meetings.",
     transcriptionProvider: "openai",
     transcriptionModel: "gpt-4o-mini-transcribe",
-    chatProvider: "openai",
-    chatModel: "gpt-4o-mini",
   },
 ];
+
+const chatModelCost = (m: ModelInfo) =>
+  (m.pricing.inputPer1MUsd ?? 0) + (m.pricing.outputPer1MUsd ?? 0);
+
+/** The chat model matching a quality/cost tier within a provider. */
+export function pickChatModel(providerId: string, tier: PresetId): string | undefined {
+  const byCost = [...modelsFor(providerId, "chat")].sort((a, b) => chatModelCost(a) - chatModelCost(b));
+  if (byCost.length === 0) return undefined;
+  // "best" = the priciest (most capable); balanced/cheapest = the cheapest.
+  return tier === "best" ? byCost[byCost.length - 1].id : byCost[0].id;
+}
 
 interface SettingsState {
   transcriptionProvider: string;
@@ -93,11 +98,12 @@ export const useSettings = create<SettingsState>()(
       applyPreset: (id) => {
         const p = PRESETS.find((x) => x.id === id);
         if (!p) return;
+        // Keep the active chat provider; pick its model for this tier.
+        const chatModel = pickChatModel(get().chatProvider, id) ?? get().chatModel;
         set({
           transcriptionProvider: p.transcriptionProvider,
           transcriptionModel: p.transcriptionModel,
-          chatProvider: p.chatProvider,
-          chatModel: p.chatModel,
+          chatModel,
         });
       },
 
@@ -109,8 +115,7 @@ export const useSettings = create<SettingsState>()(
           (p) =>
             p.transcriptionProvider === s.transcriptionProvider &&
             p.transcriptionModel === s.transcriptionModel &&
-            p.chatProvider === s.chatProvider &&
-            p.chatModel === s.chatModel,
+            pickChatModel(s.chatProvider, p.id) === s.chatModel,
         );
         return match?.id ?? null;
       },
