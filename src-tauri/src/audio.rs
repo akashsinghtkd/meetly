@@ -15,9 +15,9 @@ use std::fs::File;
 use std::io::BufWriter;
 use std::path::PathBuf;
 use std::sync::atomic::{AtomicBool, Ordering};
+use std::sync::mpsc;
 use std::sync::{Arc, Mutex};
-use std::thread::JoinHandle;
-use std::time::Instant;
+use std::time::{Duration, Instant};
 
 use cpal::traits::{DeviceTrait, HostTrait, StreamTrait};
 use cpal::SampleFormat;
@@ -62,7 +62,10 @@ pub struct ChunkEvent {
 
 struct Track {
     stop: Arc<AtomicBool>,
-    handle: JoinHandle<()>,
+    /// Signaled once the WAV files are finalized on stop, so `stop()` can return
+    /// promptly without blocking on the capture stream's (sometimes slow, on the
+    /// CoreAudio system tap) teardown.
+    done: mpsc::Receiver<()>,
     full_path: PathBuf,
 }
 
@@ -289,7 +292,8 @@ fn start_track(
     let full_writer = new_wav(&full_path, spec)?;
     let full_path_ret = full_path.clone();
 
-    let handle = std::thread::spawn(move || {
+    let (done_tx, done_rx) = mpsc::channel::<()>();
+    std::thread::spawn(move || {
         let mut index = 0usize;
         let mut chunk_path = dir.join(format!("{meeting_id}-{channel}-{index:04}.wav"));
         let chunk_writer = match new_wav(&chunk_path, spec) {
@@ -372,6 +376,9 @@ fn start_track(
                 if !got_audio_thread.load(Ordering::Relaxed) && channel == "system" {
                     eprintln!("[audio] the system-audio track received no samples");
                 }
+                // Files are finalized — let stop() return now; the capture stream
+                // tears down in the background as this thread ends.
+                let _ = done_tx.send(());
                 break;
             }
 
@@ -408,7 +415,7 @@ fn start_track(
 
     Ok(Track {
         stop,
-        handle,
+        done: done_rx,
         full_path: full_path_ret,
     })
 }
@@ -514,7 +521,9 @@ impl Recorder {
         let duration_secs = recording.started_at.elapsed().as_secs_f64();
         let stop_track = |t: Track| -> String {
             t.stop.store(true, Ordering::Relaxed);
-            let _ = t.handle.join();
+            // Wait only until the files are finalized (bounded), not for the
+            // capture stream to fully tear down — that can stall on the system tap.
+            let _ = t.done.recv_timeout(Duration::from_secs(5));
             t.full_path.to_string_lossy().into_owned()
         };
 
