@@ -1,6 +1,7 @@
 mod audio;
 mod calendar;
 mod chat;
+mod embeddings;
 mod meeting_detect;
 mod mic_permission;
 mod overlay;
@@ -67,6 +68,7 @@ pub fn run() {
             transcribe::transcribe_deepgram,
             transcribe::diarize_deepgram,
             chat::chat_completion,
+            embeddings::embed_texts,
             meeting_detect::start_meeting_detection,
             meeting_detect::stop_meeting_detection,
             meeting_detect::microphone_in_use,
