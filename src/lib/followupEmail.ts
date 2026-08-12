@@ -81,5 +81,7 @@ export function buildFollowupEmail(meeting: Meeting): EmailDraft {
 /** A `mailto:` link that opens the user's mail client with the draft prefilled. */
 export function mailtoLink(draft: EmailDraft): string {
   const params = new URLSearchParams({ subject: draft.subject, body: draft.body });
-  return `mailto:${encodeURIComponent(draft.to.join(","))}?${params.toString()}`;
+  // Recipients stay as literal comma-separated addresses (RFC 6068) — encoding
+  // the commas as %2C breaks multi-recipient parsing in some mail clients.
+  return `mailto:${draft.to.join(",")}?${params.toString()}`;
 }

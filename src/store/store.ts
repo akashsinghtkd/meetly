@@ -656,12 +656,16 @@ export const useStore = create<AppState>()(
 
       // Auto-apply names the model confidently overheard, but only over speakers
       // still showing a generic placeholder — never clobber a name the user set.
+      // Map over the *current* speakers, not the pre-await snapshot: summarize()
+      // is a slow network call, and diarization or a manual rename may have
+      // changed the speaker list in the meantime.
       const nameByLabel = new Map(
         result.speakerNames
           .filter((s) => s.confidence === "high" && s.name.trim())
           .map((s) => [s.label.trim(), s.name.trim()]),
       );
-      const renamedSpeakers = meeting.speakers.map((sp) =>
+      const currentSpeakers = get().meetings.find((m) => m.id === meetingId)?.speakers ?? meeting.speakers;
+      const renamedSpeakers = currentSpeakers.map((sp) =>
         GENERIC_SPEAKER.test(sp.displayName) && nameByLabel.has(sp.displayName)
           ? { ...sp, displayName: nameByLabel.get(sp.displayName)! }
           : sp,

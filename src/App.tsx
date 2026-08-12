@@ -165,8 +165,12 @@ export default function App() {
   // Desktop: make sure system audio ("Them") points at a loopback/system-tap
   // device — never the microphone, which would record your own voice as the
   // other participants. Fixes an unset or mis-set (== mic) system device.
+  //
+  // Must run AFTER persist hydration: micDevice/systemDevice are persisted and
+  // load asynchronously, so running earlier would be clobbered by the restored
+  // (possibly wrong) values. Gate on `storeHydrated`.
   useEffect(() => {
-    if (!inTauri()) return;
+    if (!inTauri() || !storeHydrated) return;
     (async () => {
       try {
         const devices = await listAudioDevices();
@@ -179,7 +183,7 @@ export default function App() {
         /* device enumeration failed — leave settings as-is */
       }
     })();
-  }, []);
+  }, [storeHydrated]);
 
   // Desktop: load calendar events at startup and whenever access is granted.
   useEffect(() => {
