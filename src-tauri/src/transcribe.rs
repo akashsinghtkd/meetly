@@ -77,7 +77,10 @@ pub async fn transcribe_file(
         .text("response_format", fmt)
         .part("file", part);
 
-    let client = reqwest::Client::new();
+    let client = reqwest::Client::builder()
+        .timeout(std::time::Duration::from_secs(120))
+        .build()
+        .map_err(|e| e.to_string())?;
     let resp = client
         .post("https://api.openai.com/v1/audio/transcriptions")
         .bearer_auth(api_key)
@@ -183,7 +186,10 @@ pub async fn transcribe_gemini(
 
     let url =
         format!("https://generativelanguage.googleapis.com/v1beta/models/{model}:generateContent");
-    let client = reqwest::Client::new();
+    let client = reqwest::Client::builder()
+        .timeout(std::time::Duration::from_secs(120))
+        .build()
+        .map_err(|e| e.to_string())?;
     let resp = client
         .post(url)
         .header("x-goog-api-key", api_key)
@@ -259,7 +265,10 @@ pub async fn transcribe_deepgram(
     let url = format!(
         "https://api.deepgram.com/v1/listen?model={model}&smart_format=true&punctuate=true"
     );
-    let client = reqwest::Client::new();
+    let client = reqwest::Client::builder()
+        .timeout(std::time::Duration::from_secs(120))
+        .build()
+        .map_err(|e| e.to_string())?;
     let resp = client
         .post(url)
         .header("Authorization", format!("Token {api_key}"))
@@ -355,7 +364,10 @@ pub async fn diarize_deepgram(
     let url = format!(
         "https://api.deepgram.com/v1/listen?model={model}&smart_format=true&punctuate=true&diarize=true"
     );
-    let client = reqwest::Client::new();
+    let client = reqwest::Client::builder()
+        .timeout(std::time::Duration::from_secs(120))
+        .build()
+        .map_err(|e| e.to_string())?;
     let resp = client
         .post(url)
         .header("Authorization", format!("Token {api_key}"))

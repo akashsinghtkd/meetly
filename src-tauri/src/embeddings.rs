@@ -50,14 +50,17 @@ pub async fn embed_texts(
         .unwrap_or_else(|| "https://api.openai.com/v1".into());
     let url = format!("{}/embeddings", base.trim_end_matches('/'));
 
-    let client = reqwest::Client::new();
+    let client = reqwest::Client::builder()
+        .timeout(std::time::Duration::from_secs(60))
+        .build()
+        .map_err(|e| e.to_string())?;
     let resp = client
         .post(url)
         .bearer_auth(api_key)
         .json(&json!({ "model": model, "input": texts }))
         .send()
         .await
-        .map_err(|e| format!("request failed: {e}"))?;
+        .map_err(|e| format!("request failed (timed out or network error): {e}"))?;
 
     let status = resp.status();
     let text = resp.text().await.map_err(|e| e.to_string())?;
