@@ -1,11 +1,24 @@
 import { useEffect, useState } from "react";
-import { Loader2, Shield, ToggleLeft, ToggleRight } from "lucide-react";
+import { CircleDollarSign, Download, Loader2, Mic2, Shield, ToggleLeft, ToggleRight, Users } from "lucide-react";
 import clsx from "clsx";
 import { PageHeader } from "./PageHeader";
 import { Button } from "./ui";
 import { usePlatformAdmin } from "../store/platformAdminStore";
 import { useBilling } from "../store/billingStore";
 import type { BillingPlan } from "../lib/billing/plans";
+import { TeamsTab } from "./admin/TeamsTab";
+import { MeetingsTab } from "./admin/MeetingsTab";
+import { BuildsTab } from "./admin/BuildsTab";
+import { UsageTab } from "./admin/UsageTab";
+
+const TABS = [
+  { id: "billing", label: "Billing", icon: Shield },
+  { id: "teams", label: "Teams & users", icon: Users },
+  { id: "meetings", label: "Meetings & recordings", icon: Mic2 },
+  { id: "builds", label: "Builds & releases", icon: Download },
+  { id: "usage", label: "Usage", icon: CircleDollarSign },
+] as const;
+type TabId = (typeof TABS)[number]["id"];
 
 export function SuperAdminView() {
   const isAdmin = usePlatformAdmin((s) => s.isAdmin);
@@ -25,6 +38,7 @@ export function SuperAdminView() {
   const [err, setErr] = useState<string | null>(null);
   const [adminEmail, setAdminEmail] = useState("");
   const [editing, setEditing] = useState<BillingPlan | null>(null);
+  const [tab, setTab] = useState<TabId>("billing");
 
   useEffect(() => {
     load();
@@ -82,24 +96,48 @@ export function SuperAdminView() {
   };
 
   return (
-    <div className="max-w-3xl mx-auto px-8 sm:px-12 py-10 sm:py-12">
+    <div className="max-w-4xl mx-auto px-8 sm:px-12 py-10 sm:py-12">
       <PageHeader
         title="Platform admin"
-        subtitle="Control whether billing is live and edit plan limits. Keep billing off until you’re ready to charge."
+        subtitle="Watch and control what's running across teams, meetings, releases, and billing."
       />
 
-      {(msg || err || error) && (
-        <p
-          className={clsx(
-            "mb-4 text-sm rounded-lg px-3 py-2 border",
-            msg
-              ? "text-emerald-700 bg-emerald-50 border-emerald-100"
-              : "text-red-600 bg-red-50 border-red-100",
+      <div className="flex flex-wrap gap-1 mb-8 border-b border-line">
+        {TABS.map((t) => (
+          <button
+            key={t.id}
+            onClick={() => setTab(t.id)}
+            className={clsx(
+              "flex items-center gap-1.5 px-3 py-2.5 text-sm font-medium border-b-2 -mb-px transition-colors",
+              tab === t.id
+                ? "border-accent text-ink"
+                : "border-transparent text-ink-faint hover:text-ink",
+            )}
+          >
+            <t.icon className="h-3.5 w-3.5" /> {t.label}
+          </button>
+        ))}
+      </div>
+
+      {tab === "teams" && <TeamsTab />}
+      {tab === "meetings" && <MeetingsTab />}
+      {tab === "builds" && <BuildsTab />}
+      {tab === "usage" && <UsageTab />}
+
+      {tab === "billing" && (
+        <>
+          {(msg || err || error) && (
+            <p
+              className={clsx(
+                "mb-4 text-sm rounded-lg px-3 py-2 border",
+                msg
+                  ? "text-emerald-700 bg-emerald-50 border-emerald-100"
+                  : "text-red-600 bg-red-50 border-red-100",
+              )}
+            >
+              {msg ?? err ?? error}
+            </p>
           )}
-        >
-          {msg ?? err ?? error}
-        </p>
-      )}
 
       <section className="mb-8 rounded-xl border border-line p-4">
         <div className="flex items-start justify-between gap-4">
@@ -222,6 +260,8 @@ export function SuperAdminView() {
           </Button>
         </form>
       </section>
+        </>
+      )}
     </div>
   );
 }
