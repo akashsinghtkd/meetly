@@ -7,6 +7,7 @@ import { useCost } from "../store/costStore";
 import { apiBaseFor, chatCostUsd, getModel, isOpenAICompat } from "./providers/catalog";
 import { chatCompletion } from "./providers/chat";
 import { retrievePassages, type Passage } from "./semanticSearch";
+import { budgetStatus } from "./budget";
 import { inTauri } from "./tauri";
 import type { Meeting } from "./types";
 
@@ -47,7 +48,9 @@ export async function askAcrossMeetings(
   const passages = await retrievePassages(question, meetings, 8);
   const sources = dedupeSources(passages);
 
-  if (!canAnswer() || passages.length === 0) {
+  // Retrieval already degrades to offline embeddings under the cap; also skip the
+  // paid written answer rather than spending past the budget.
+  if (!canAnswer() || passages.length === 0 || budgetStatus().blocked) {
     return { answer: "", sources, answered: false };
   }
 

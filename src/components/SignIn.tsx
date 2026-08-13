@@ -1,9 +1,9 @@
 import { useState, type FormEvent } from "react";
-import { Loader2 } from "lucide-react";
+import { ArrowLeft, Loader2 } from "lucide-react";
 import { useAuth } from "../store/authStore";
 import { BrandMark, Button } from "./ui";
 
-export function SignIn() {
+export function SignIn({ onBack }: { onBack?: () => void }) {
   const signIn = useAuth((s) => s.signIn);
   const signUp = useAuth((s) => s.signUp);
   const busy = useAuth((s) => s.busy);
@@ -34,6 +34,15 @@ export function SignIn() {
   return (
     <div className="h-screen w-screen grid place-items-center bg-surface-sidebar px-4">
       <div className="w-full max-w-[380px]">
+        {onBack && (
+          <button
+            type="button"
+            onClick={onBack}
+            className="mb-5 inline-flex items-center gap-1.5 text-sm text-ink-light hover:text-ink"
+          >
+            <ArrowLeft className="h-4 w-4" /> Back
+          </button>
+        )}
         <div className="flex flex-col items-center mb-8">
           <BrandMark size="lg" />
           <h1 className="mt-3 font-semibold text-ink text-xl tracking-tight">Meetly</h1>

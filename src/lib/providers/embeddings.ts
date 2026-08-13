@@ -6,8 +6,10 @@
 //    keyword match; true synonym-level semantics needs the OpenAI provider.
 
 import { useSettings } from "../../store/settingsStore";
+import { useCost } from "../../store/costStore";
 import { inTauri } from "../tauri";
-import { apiBaseFor, isOpenAICompat, modelsFor } from "./catalog";
+import { apiBaseFor, chatCostUsd, getModel, isOpenAICompat, modelsFor } from "./catalog";
+import { budgetStatus } from "../budget";
 
 export interface Embedder {
   /** Identifies the provider so a switch (e.g. adding a key) invalidates caches. */
@@ -19,7 +21,7 @@ export interface Embedder {
 class OpenAICompatEmbedder implements Embedder {
   id: string;
   constructor(
-    provider: string,
+    private provider: string,
     private model: string,
     private apiKey: string,
     private baseUrl?: string,
@@ -36,6 +38,21 @@ class OpenAICompatEmbedder implements Embedder {
       texts,
       baseUrl: this.baseUrl,
     });
+    // Record embedding spend to the cost ledger (mirrors chat/transcription).
+    // Done here rather than at call sites so every embed — including per-batch
+    // index building — is captured, not just the query embed.
+    const tokens = res.input_tokens ?? 0;
+    if (tokens > 0) {
+      const model = getModel(this.provider, this.model);
+      useCost.getState().add({
+        provider: this.provider,
+        model: this.model,
+        kind: "embedding",
+        inputTokens: tokens,
+        costUsd: model ? chatCostUsd(model.pricing, tokens, 0) : 0,
+        estimated: false,
+      });
+    }
     return res.vectors;
   }
 }
@@ -89,6 +106,9 @@ class LocalEmbedder implements Embedder {
 
 /** The active provider's embeddings when a key is set; the offline embedder otherwise. */
 export function getEmbedder(): Embedder {
+  // When the hard budget cap is hit, degrade to the free offline embedder rather
+  // than making paid embedding calls.
+  if (budgetStatus().blocked) return new LocalEmbedder();
   return resolveRemoteEmbedder() ?? new LocalEmbedder();
 }
 

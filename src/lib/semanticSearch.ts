@@ -54,13 +54,21 @@ function meetingChunks(m: Meeting): Chunk[] {
 
 /** Cheap content signature: re-embed a meeting only when this changes. */
 function hashMeeting(m: Meeting): string {
-  return [
-    m.title,
+  const actions = m.actionItems.map((a) => `${a.owner}:${a.task}`).join("|");
+  const summary = [
     m.summary?.executive ?? "",
-    m.actionItems.length,
-    m.transcript.length,
-    m.transcript[m.transcript.length - 1]?.text ?? "",
+    ...(m.summary?.sections ?? []).map((s) => `${s.heading}:${s.items.join(",")}`),
+    ...(m.summary?.decisions ?? []),
   ].join("|");
+  // Cheap per-segment digest (length + char-sum) so an edit to ANY segment —
+  // not just the last — changes the hash, without hashing the full text.
+  let segDigest = "";
+  for (const seg of m.transcript) {
+    let sum = 0;
+    for (let i = 0; i < seg.text.length; i++) sum = (sum + seg.text.charCodeAt(i)) | 0;
+    segDigest += `${seg.text.length}:${sum >>> 0};`;
+  }
+  return [m.title, summary, actions, m.transcript.length, segDigest].join("|");
 }
 
 async function ensureIndex(meetings: Meeting[], embedder: Embedder): Promise<void> {
@@ -84,7 +92,15 @@ async function ensureIndex(meetings: Meeting[], embedder: Embedder): Promise<voi
 
   if (pending.length > 0) {
     const flat = pending.flatMap((p) => p.chunks.map((c) => c.text));
-    const vecs = await embedder.embed(flat);
+    // Batch so a heavy library doesn't exceed the provider's per-request input
+    // cap (OpenAI embeddings 400 past a few hundred inputs). Vectors are
+    // concatenated in original order, keeping the `off` remapping below valid.
+    const BATCH = 256;
+    const vecs: number[][] = [];
+    for (let i = 0; i < flat.length; i += BATCH) {
+      const part = await embedder.embed(flat.slice(i, i + BATCH));
+      for (const v of part) vecs.push(v);
+    }
     let off = 0;
     for (const p of pending) {
       const chunks = p.chunks.map((c, i) => ({ text: c.text, where: c.where, vec: vecs[off + i] }));

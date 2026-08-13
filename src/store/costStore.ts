@@ -41,18 +41,23 @@ interface CostState {
 
 let seq = 0;
 
+// Cap the ledger so it can't grow without bound (it's persisted). Keep the most
+// recent records; selectors/totals read whatever is retained.
+const MAX_RECORDS = 2000;
+
 export const useCost = create<CostState>()(
   persist(
     (set, get) => ({
       records: [],
 
       add: (r) =>
-        set((s) => ({
-          records: [
+        set((s) => {
+          const records = [
             ...s.records,
             { ...r, id: `u-${Date.now().toString(36)}-${seq++}`, at: new Date().toISOString() },
-          ],
-        })),
+          ];
+          return { records: records.length > MAX_RECORDS ? records.slice(-MAX_RECORDS) : records };
+        }),
 
       reset: () => set({ records: [] }),
 

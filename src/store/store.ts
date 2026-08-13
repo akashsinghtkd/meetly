@@ -216,8 +216,19 @@ export const useStore = create<AppState>()(
     set((s) => {
       const m = s.meetings.find((mm) => mm.id === meetingId);
       if (!m || !m.projectId) return s;
+      // Prune this meeting's auto-created tasks whose source action item is gone
+      // (e.g. after "Regenerate" replaced the items) so we reconcile instead of
+      // appending duplicates. Tasks that survive keep their completion state;
+      // manually-added tasks (no sourceActionItemId) are always kept.
+      const currentItemIds = new Set(m.actionItems.map((a) => a.id));
+      const pruned = s.tasks.filter(
+        (t) =>
+          t.sourceMeetingId !== meetingId ||
+          !t.sourceActionItemId ||
+          currentItemIds.has(t.sourceActionItemId),
+      );
       const existing = new Set(
-        s.tasks.filter((t) => t.sourceActionItemId).map((t) => t.sourceActionItemId),
+        pruned.filter((t) => t.sourceActionItemId).map((t) => t.sourceActionItemId),
       );
       const newTasks: Task[] = m.actionItems
         .filter((a) => a.task.trim() && !existing.has(a.id))
@@ -231,7 +242,9 @@ export const useStore = create<AppState>()(
           sourceMeetingId: m.id,
           sourceActionItemId: a.id,
         }));
-      return newTasks.length ? { tasks: [...s.tasks, ...newTasks] } : s;
+      return pruned.length !== s.tasks.length || newTasks.length
+        ? { tasks: [...pruned, ...newTasks] }
+        : s;
     }),
 
   updateMeeting: (id, patch) =>
@@ -520,7 +533,23 @@ export const useStore = create<AppState>()(
 
     get().updateMeeting(meetingId, { status: "processing", error: undefined });
     try {
-      const speakers = [{ id: "me", label: "Me", displayName: "Me", color: SPEAKER_COLORS[0] }];
+      // Carry forward names a user/liveNaming set, so re-transcription doesn't
+      // reset speakers back to "Me" / "Speaker N". Map old→new by order: the
+      // mic speaker is "me"; the remaining prior speakers line up, in order,
+      // with the newly-diarized system speakers.
+      const priorSpeakers = meeting.speakers;
+      const priorSystem = priorSpeakers.filter((sp) => sp.id !== "me");
+      const carried = (prior: { displayName: string } | undefined, fallback: string) =>
+        prior && !GENERIC_SPEAKER.test(prior.displayName.trim()) ? prior.displayName : fallback;
+
+      const speakers = [
+        {
+          id: "me",
+          label: "Me",
+          displayName: carried(priorSpeakers.find((sp) => sp.id === "me"), "Me"),
+          color: SPEAKER_COLORS[0],
+        },
+      ];
       const segments: TranscriptSegment[] = [];
       const model = getModel("deepgram", "nova-3");
       const perCallCost = model ? transcriptionCostUsd(model.pricing, meeting.durationSecs) : 0;
@@ -568,7 +597,7 @@ export const useStore = create<AppState>()(
             speakers.push({
               id: sid,
               label: `Speaker ${n + 2}`,
-              displayName: `Speaker ${n + 2}`,
+              displayName: carried(priorSystem[n], `Speaker ${n + 2}`),
               color: SPEAKER_COLORS[(n + 1) % SPEAKER_COLORS.length],
             });
           }
@@ -648,26 +677,42 @@ export const useStore = create<AppState>()(
         estimated: result.estimated,
       });
 
-      const actionItems: ActionItem[] = result.actionItems.map((a, i) => ({
-        id: `a-${Date.now().toString(36)}-${i}`,
-        owner: a.owner,
-        task: a.task,
-        due: a.due,
-        urgency: a.urgency ?? "normal",
-        status: "open" as const,
-      }));
+      // Use the *current* meeting (summarize() is a slow network call) for both
+      // speaker and action-item reconciliation.
+      const latest = get().meetings.find((m) => m.id === meetingId);
+
+      // Reuse an existing action item's id (and its completion state) when the
+      // regenerated item has the same task + owner, so "Regenerate" reconciles
+      // with the task board instead of orphaning/duplicating tasks.
+      const prevItems = latest?.actionItems ?? meeting.actionItems;
+      const usedPrev = new Set<string>();
+      const actionItems: ActionItem[] = result.actionItems.map((a, i) => {
+        const match = prevItems.find(
+          (p) =>
+            !usedPrev.has(p.id) &&
+            p.task.trim() === a.task.trim() &&
+            (p.owner || "") === (a.owner || ""),
+        );
+        if (match) usedPrev.add(match.id);
+        return {
+          id: match?.id ?? `a-${Date.now().toString(36)}-${i}`,
+          owner: a.owner,
+          task: a.task,
+          due: a.due,
+          urgency: a.urgency ?? "normal",
+          status: match?.status ?? ("open" as const),
+        };
+      });
 
       // Auto-apply names the model confidently overheard, but only over speakers
       // still showing a generic placeholder — never clobber a name the user set.
-      // Map over the *current* speakers, not the pre-await snapshot: summarize()
-      // is a slow network call, and diarization or a manual rename may have
-      // changed the speaker list in the meantime.
+      // Map over the *current* speakers, not the pre-await snapshot: diarization
+      // or a manual rename may have changed the speaker list in the meantime.
       const nameByLabel = new Map(
         result.speakerNames
           .filter((s) => s.confidence === "high" && s.name.trim())
           .map((s) => [s.label.trim(), s.name.trim()]),
       );
-      const latest = get().meetings.find((m) => m.id === meetingId);
       const renamedSpeakers = (latest?.speakers ?? meeting.speakers).map((sp) =>
         GENERIC_SPEAKER.test(sp.displayName) && nameByLabel.has(sp.displayName)
           ? { ...sp, displayName: nameByLabel.get(sp.displayName)! }

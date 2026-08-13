@@ -197,15 +197,20 @@ extern "C" fn io_proc(
             }
             // Taps deliver 32-bit float; the WAVs are 16-bit PCM like the mic.
             let samples = std::slice::from_raw_parts(buf.data as *const f32, (buf.byte_size / 4) as usize);
+            let mut written = 0usize;
             for &s in samples {
                 let v = (s.clamp(-1.0, 1.0) * i16::MAX as f32) as i16;
                 if let Some(w) = guard.chunk.as_mut() {
                     let _ = w.write_sample(v);
+                    written += 1;
                 }
                 if let Some(w) = guard.full.as_mut() {
                     let _ = w.write_sample(v);
                 }
             }
+            // Count samples so the "skip empty chunks" gate (audio.rs) doesn't
+            // suppress every system-audio chunk captured through the tap.
+            guard.chunk_samples += written;
         }
         state.got_audio.store(true, Ordering::Relaxed);
     }
@@ -427,6 +432,7 @@ mod tests {
         let writer = hound::WavWriter::create(&path, spec).expect("create wav");
         let sink: SharedSink = Arc::new(Mutex::new(crate::audio::Sink {
             chunk: None,
+            chunk_samples: 0,
             full: Some(writer),
         }));
 

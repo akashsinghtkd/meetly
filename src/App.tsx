@@ -15,6 +15,7 @@ import { RecordBar } from "./components/RecordBar";
 import { AIChatPanel } from "./components/AIChatPanel";
 import { NewProjectModal } from "./components/NewProjectModal";
 import { SignIn } from "./components/SignIn";
+import { Landing } from "./components/Landing";
 import { CreateTeamspace } from "./components/CreateTeamspace";
 import {
   AcceptInvite,
@@ -91,6 +92,9 @@ export default function App() {
     cloudEnabled() ? readInviteToken() : null,
   );
   const [inviteDone, setInviteDone] = useState(false);
+  // Logged-out web visitors land on the marketing page first; the invite flow
+  // (and an explicit "Sign in" click) jumps straight to the auth form.
+  const [showSignIn, setShowSignIn] = useState(false);
   const [pendingMeeting, setPendingMeeting] = useState<string | null>(() => {
     try {
       return new URL(window.location.href).searchParams.get("meeting");
@@ -242,7 +246,13 @@ export default function App() {
 
   if (cloudEnabled() && !ready) return <Splash label="Loading Meetly…" />;
 
-  if (cloudEnabled() && !user) return <SignIn />;
+  if (cloudEnabled() && !user) {
+    // Desktop app users always want the auth form, not the marketing pitch.
+    if (showSignIn || inviteToken || inTauri()) {
+      return <SignIn onBack={inTauri() ? undefined : () => setShowSignIn(false)} />;
+    }
+    return <Landing onGetStarted={() => setShowSignIn(true)} />;
+  }
 
   if (cloudEnabled() && user && inviteToken && !inviteDone) {
     return (

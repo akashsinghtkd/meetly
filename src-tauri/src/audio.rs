@@ -498,7 +498,19 @@ impl Recorder {
 
         let mic = start_track(app.clone(), meeting_id.to_string(), "mic", mic_device, dir.clone())?;
         let system = match system_device {
-            Some(name) => Some(start_track(app.clone(), meeting_id.to_string(), "system", Some(name), dir.clone())?),
+            Some(name) => {
+                match start_track(app.clone(), meeting_id.to_string(), "system", Some(name), dir.clone()) {
+                    Ok(t) => Some(t),
+                    Err(e) => {
+                        // The system track failed after the mic capture thread was
+                        // already spawned — stop it (mirrors stop()'s stop_track)
+                        // so it doesn't leak, then surface the error.
+                        mic.stop.store(true, Ordering::Relaxed);
+                        let _ = mic.done.recv_timeout(Duration::from_secs(5));
+                        return Err(e);
+                    }
+                }
+            }
             None => None,
         };
 

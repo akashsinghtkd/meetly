@@ -195,7 +195,14 @@ class OpenAICompatSummarizer implements Summarizer {
     } catch {
       // Best effort: pull the first {...} block if the model wrapped it.
       const match = out.content.match(/\{[\s\S]*\}/);
-      if (match) parsed = JSON.parse(match[0]);
+      if (match) {
+        try {
+          parsed = JSON.parse(match[0]);
+        } catch {
+          // Truncated output leaves the {...} span unbalanced — leave parsed as
+          // {} so normalizeSummary yields an empty-but-valid summary.
+        }
+      }
     }
     const { summary, actionItems, speakerNames, title: aiTitle } = normalizeSummary(parsed);
     return {
