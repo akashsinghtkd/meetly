@@ -183,8 +183,8 @@
 .landing-app-window i { width: 8px; height: 8px; border-radius: 50%; background: #cbd5e1; }
 .landing-float-card { position: absolute; z-index: 2; display: flex; align-items: center; gap: 8px; border: 1px solid rgba(226,232,240,.9); border-radius: 13px; background: rgba(255,255,255,.9); padding: 11px 14px; font-size: 10px; color: #64748b; box-shadow: 0 15px 35px rgba(15,23,42,.13); backdrop-filter: blur(12px); animation: landing-float 5s ease-in-out infinite; }
 .landing-float-card b { color: #0f172a; }.landing-float-left { left: -24px; top: 32%; }.landing-float-right { right: -28px; bottom: 17%; animation-delay: -2.2s; }
-.landing-step-card, .landing-feature-card { transition: transform .25s ease, border-color .25s ease, box-shadow .25s ease; }
-.landing-step-card:hover, .landing-feature-card:hover { transform: translateY(-5px); border-color: #c7d2fe; box-shadow: 0 18px 44px rgba(15,23,42,.07); }
+.landing-step-card, .landing-feature-card, .landing-download-card { transition: transform .25s ease, border-color .25s ease, box-shadow .25s ease; }
+.landing-step-card:hover, .landing-feature-card:hover, .landing-download-card:hover { transform: translateY(-5px); border-color: #c7d2fe; box-shadow: 0 18px 44px rgba(15,23,42,.07); }
 .landing-demo-panel { animation: landing-panel .35s ease both; }
 .landing-privacy { background: radial-gradient(circle at 15% 20%, #eef2ff, transparent 42%), linear-gradient(135deg,#f8fafc,#f5f3ff); }
 .landing-eyebrow { display: inline-flex; align-items: center; gap: 7px; border-radius: 999px; background: white; padding: 7px 11px; font-size: 11px; font-weight: 800; color: #4f46e5; box-shadow: 0 4px 15px rgba(15,23,42,.05); }

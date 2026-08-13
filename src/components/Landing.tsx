@@ -1,5 +1,6 @@
-import { useState, type MouseEvent } from "react";
+import { useEffect, useState, type MouseEvent } from "react";
 import {
+  Apple,
   ArrowRight,
   Bot,
   CalendarClock,
@@ -8,6 +9,7 @@ import {
   CheckSquare,
   ChevronRight,
   Clock3,
+  Download,
   KeyRound,
   LockKeyhole,
   Mail,
@@ -27,8 +29,28 @@ import { BrandMark } from "./ui";
 
 type LandingProps = { onGetStarted: () => void };
 
+const APP_VERSION = "0.1.0";
+const BUILDS_BASE = "https://nbrvmmafbartiqcniddy.supabase.co/storage/v1/object/public/builds/meetly";
+const DOWNLOADS = {
+  mac: { url: `${BUILDS_BASE}/${APP_VERSION}/macos/Meetly_${APP_VERSION}_x64.dmg`, label: "macOS", sizeMb: 5.8, requirement: "Apple Silicon & Intel" },
+  windows: { url: `${BUILDS_BASE}/${APP_VERSION}/windows/Meetly_${APP_VERSION}_x64-setup.exe`, label: "Windows", sizeMb: 3.8, requirement: "Windows 10/11 · 64-bit" },
+};
+
+function detectPlatform(): "mac" | "windows" | null {
+  if (typeof navigator === "undefined") return null;
+  const ua = navigator.userAgent;
+  if (/Mac/i.test(ua)) return "mac";
+  if (/Win/i.test(ua)) return "windows";
+  return null;
+}
+
 export function Landing({ onGetStarted }: LandingProps) {
   const [menuOpen, setMenuOpen] = useState(false);
+  const [platform, setPlatform] = useState<"mac" | "windows" | null>(null);
+
+  useEffect(() => {
+    setPlatform(detectPlatform());
+  }, []);
 
   const goTo = (id: string) => {
     setMenuOpen(false);
@@ -46,6 +68,7 @@ export function Landing({ onGetStarted }: LandingProps) {
           <nav className="hidden items-center gap-8 md:flex" aria-label="Main navigation">
             <button onClick={() => goTo("how-it-works")}>How it works</button>
             <button onClick={() => goTo("features")}>Features</button>
+            <button onClick={() => goTo("download")}>Download</button>
             <button onClick={() => goTo("privacy")}>Privacy</button>
             <button onClick={() => goTo("faq")}>FAQ</button>
           </nav>
@@ -53,8 +76,8 @@ export function Landing({ onGetStarted }: LandingProps) {
             <button onClick={onGetStarted} className="px-3 py-2 text-sm font-semibold text-slate-600 hover:text-slate-950">
               Sign in
             </button>
-            <button onClick={onGetStarted} className="landing-button landing-button-dark">
-              Get started <ArrowRight className="h-4 w-4" />
+            <button onClick={() => goTo("download")} className="landing-button landing-button-dark">
+              Download <Download className="h-4 w-4" />
             </button>
           </div>
           <button
@@ -69,7 +92,7 @@ export function Landing({ onGetStarted }: LandingProps) {
         {menuOpen && (
           <div className="border-t border-slate-100 bg-white px-5 py-5 md:hidden">
             <div className="flex flex-col gap-1">
-              {["how-it-works", "features", "privacy", "faq"].map((id) => (
+              {["how-it-works", "features", "download", "privacy", "faq"].map((id) => (
                 <button key={id} onClick={() => goTo(id)} className="rounded-lg px-3 py-3 text-left text-sm font-semibold capitalize hover:bg-slate-50">
                   {id.replace(/-/g, " ")}
                 </button>
@@ -97,11 +120,20 @@ export function Landing({ onGetStarted }: LandingProps) {
               Meetly captures the conversation, writes structured notes, finds decisions, and turns every commitment into an action item—while your meeting stays private.
             </p>
             <div className="landing-reveal landing-delay-3 mt-9 flex flex-col items-center justify-center gap-3 sm:flex-row">
-              <button onClick={onGetStarted} className="landing-button landing-button-primary w-full justify-center sm:w-auto">
-                Start for free <ArrowRight className="h-4 w-4" />
-              </button>
+              <a href={DOWNLOADS[platform ?? "mac"].url} className="landing-button landing-button-primary w-full justify-center sm:w-auto">
+                <Download className="h-4 w-4" /> Download for {DOWNLOADS[platform ?? "mac"].label}
+              </a>
               <button onClick={() => goTo("product-demo")} className="landing-button landing-button-secondary w-full justify-center sm:w-auto">
                 <Play className="h-4 w-4 fill-current" /> See how it works
+              </button>
+            </div>
+            <div className="landing-reveal landing-delay-3 mt-4 text-xs font-semibold text-slate-500">
+              <button onClick={() => goTo("download")} className="underline decoration-slate-300 underline-offset-2 hover:text-slate-950">
+                Other platform / system requirements
+              </button>
+              {" · "}
+              <button onClick={onGetStarted} className="underline decoration-slate-300 underline-offset-2 hover:text-slate-950">
+                Continue in the browser
               </button>
             </div>
             <div className="landing-reveal landing-delay-3 mt-5 flex flex-wrap items-center justify-center gap-x-5 gap-y-2 text-xs font-semibold text-slate-500">
@@ -154,6 +186,32 @@ export function Landing({ onGetStarted }: LandingProps) {
               </article>
             ))}
           </div>
+        </section>
+
+        <section id="download" className="landing-section bg-slate-50">
+          <SectionHeading eyebrow="Get the desktop app" title="One download. Recording in under a minute." body="Meetly runs natively on Mac and Windows so it can capture your microphone and system audio without a participant bot." />
+          <div className="mx-auto mt-12 grid max-w-4xl gap-5 px-5 sm:grid-cols-2 sm:px-8">
+            {(Object.entries(DOWNLOADS) as [keyof typeof DOWNLOADS, (typeof DOWNLOADS)[keyof typeof DOWNLOADS]][]).map(([key, build]) => (
+              <a
+                key={key}
+                href={build.url}
+                className="landing-download-card flex flex-col rounded-3xl border border-slate-200 bg-white p-7 shadow-sm"
+              >
+                <span className="grid h-12 w-12 place-items-center rounded-2xl bg-indigo-50 text-indigo-600">
+                  {key === "mac" ? <Apple className="h-6 w-6" /> : <MonitorUp className="h-6 w-6" />}
+                </span>
+                <h3 className="mt-6 text-xl font-bold tracking-tight">Meetly for {build.label}</h3>
+                <p className="mt-2 text-sm text-slate-500">{build.requirement}</p>
+                <div className="mt-6 flex items-center gap-2 text-sm font-bold text-indigo-600">
+                  <Download className="h-4 w-4" /> Download{build.sizeMb ? ` (${build.sizeMb} MB)` : ""}
+                </div>
+                <p className="mt-3 text-xs text-slate-400">v{APP_VERSION} · unsigned build — your OS may ask you to confirm the first launch.</p>
+              </a>
+            ))}
+          </div>
+          <p className="mx-auto mt-8 max-w-2xl px-5 text-center text-xs text-slate-400 sm:px-8">
+            Prefer to read and organize notes without installing anything? <button onClick={onGetStarted} className="font-semibold text-slate-600 underline decoration-slate-300 underline-offset-2 hover:text-slate-950">Continue in the browser</button> — recording still requires the desktop app.
+          </p>
         </section>
 
         <section id="privacy" className="landing-section landing-privacy">
