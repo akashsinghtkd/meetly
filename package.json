@@ -14,7 +14,9 @@
     "db:stop": "npx supabase stop",
     "db:status": "npx supabase status",
     "db:migrate-mac": "node scripts/migrate-mac-to-db.mjs",
-    "start": "bash ./start.sh"
+    "start": "bash ./start.sh",
+    "build:upload-mac": "node scripts/upload-build.mjs macos",
+    "build:upload-windows": "node scripts/upload-build.mjs windows"
   },
   "dependencies": {
     "@supabase/supabase-js": "^2.47.10",

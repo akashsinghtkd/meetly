@@ -46,3 +46,40 @@ jobs:
       # which is all we need to verify the code builds on each OS.
       - name: Build (compile only, no installer)
         run: npm run tauri -- build --no-bundle
+
+  # Real installer build + publish. Manual only (never on every push) so it
+  # doesn't build/upload a fresh artifact on each commit. Windows can't be
+  # cross-compiled from the Mac (C deps need MSVC), so this is the only way
+  # to produce a real Windows installer.
+  release-windows:
+    if: github.event_name == 'workflow_dispatch'
+    name: release-windows
+    runs-on: windows-latest
+    steps:
+      - uses: actions/checkout@v4
+
+      - uses: actions/setup-node@v4
+        with:
+          node-version: 20
+          cache: npm
+
+      - uses: dtolnay/rust-toolchain@stable
+
+      - uses: swatinem/rust-cache@v2
+        with:
+          workspaces: src-tauri
+
+      - name: Install frontend dependencies
+        run: npm ci
+
+      - name: Build installer
+        env:
+          VITE_SUPABASE_URL: ${{ secrets.VITE_SUPABASE_URL }}
+          VITE_SUPABASE_ANON_KEY: ${{ secrets.VITE_SUPABASE_ANON_KEY }}
+        run: npm run tauri -- build
+
+      - name: Upload to Supabase Storage
+        env:
+          SUPABASE_URL: ${{ secrets.VITE_SUPABASE_URL }}
+          SUPABASE_SERVICE_ROLE_KEY: ${{ secrets.SUPABASE_SERVICE_ROLE_KEY }}
+        run: node scripts/upload-build.mjs windows
